@@ -131,7 +131,7 @@ class Summarizer(object):
                         call_index_diff = np.diff(call_index)
                         num_passes[p2, p1] = sum(call_index_diff >= self.pass_window) + 1
 
-        t = (np.arange(len(e_frame)) - 0.5) * self.window_size * 1e-3 # sec
+        t = (np.arange(1, len(e_frame)+1) - 0.5) * self.window_size * 1e-3 # sec
         return self.SummaryOutput(num_calls, num_passes, e_norm, t, call_index_all)
 
 
