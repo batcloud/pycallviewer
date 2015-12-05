@@ -87,6 +87,11 @@ class Summarizer(object):
         return e_norm
 
     def count_calls(self, x, fs):
+        # Assure that signals in 8bits are signed
+        if x.dtype is np.dtype('uint8'):
+            x = np.int8(np.int16(x) - 128)
+
+        # Assure the signal is a matrix
         if len(x.shape) == 1:
             x = x.reshape(x.shape[0], 1)
         num_ch = x.shape[1]
@@ -142,8 +147,6 @@ if __name__ == "__main__":
     except IOError:
         print("Cannot find file: %s" % sys.argv[1])
         exit()
-
-    data = np.int8(np.int16(data)-128)
 
     summarizer = Summarizer(HPFcutoff = 15)
     summary = summarizer.count_calls(data, fs)
