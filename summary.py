@@ -2,7 +2,6 @@ from __future__ import division
 
 import numpy as np
 
-from collections import namedtuple
 from operator import itemgetter
 from itertools import groupby
 
@@ -10,13 +9,30 @@ from scipy.signal import ellipord, ellip, lfilter
 
 def find_contiguous_indices(data):
     ranges = []
-    for key, group in groupby(enumerate(data), lambda (index, item): index - item):
-        group = map(itemgetter(1), group)
+    for key, group in groupby(enumerate(data), lambda args: args[0] - args[1]):
+        group = list(map(itemgetter(1), group))
         if len(group) > 1:
             ranges.append((group[0], group[-1]))
         else:
             ranges.append((group[0], group[0]))
     return ranges
+
+class Summary(object):
+    def __init__(self, num_calls, num_passes, e_norm, t, call_index_all):
+        self.num_calls = num_calls
+        self.num_passes = num_passes
+        self.e_norm = e_norm
+        self.t = t
+        self.call_index_all = call_index_all
+
+    def __str__(self):
+        output = []
+        output.append("Thresholds (dB): %s" % Summarizer.detect_thresh_all)
+        for ch in range(self.num_calls.shape[1]):
+            output.append("Channel %i" % (ch+1))
+            output.append('\tNum calls : %s' % self.num_calls[:, ch].tolist())
+            output.append('\tNum passes: %s' % self.num_passes[:, ch].tolist())
+        return "\n".join(output)
 
 class Summarizer(object):
     # Parameters:
@@ -26,12 +42,6 @@ class Summarizer(object):
     detect_thresh_all = [5, 10, 15, 20, 30, 40, 50] # dB, above the noise floor
     Rp = 2 # dB, passband ripple
     Rs = 80 # dB, stopband suppression for HPF/BPF
-
-    SummaryOutput = namedtuple('SummaryOutput', ['num_calls',
-                                                 'num_passes',
-                                                 'e_norm',
-                                                 't',
-                                                 'call_index_all'])
 
     def __init__(self, LPFcutoff = np.inf, HPFcutoff = 15):
         self.LPFcutoff = LPFcutoff
@@ -86,7 +96,7 @@ class Summarizer(object):
         e_norm[e_norm < -10] = -10 # clip outliers
         return e_norm
 
-    def count_calls(self, x, fs):
+    def summarize(self, x, fs):
         # Assure that signals in 8bits are signed
         if x.dtype is np.dtype('uint8'):
             x = np.int8(np.int16(x) - 128)
@@ -132,7 +142,7 @@ class Summarizer(object):
                         num_passes[p2, p1] = sum(call_index_diff >= self.pass_window) + 1
 
         t = (np.arange(1, len(e_frame)+1) - 0.5) * self.window_size * 1e-3 # sec
-        return self.SummaryOutput(num_calls, num_passes, e_norm, t, call_index_all)
+        return Summary(num_calls, num_passes, e_norm, t, call_index_all)
 
 
 if __name__ == "__main__":
@@ -149,9 +159,5 @@ if __name__ == "__main__":
         exit()
 
     summarizer = Summarizer(HPFcutoff = 15)
-    summary = summarizer.count_calls(data, fs)
-
-    for ch in range(summary.num_calls.shape[1]):
-        print("Channel %i" % (ch+1))
-        print '\tNum calls :', summary.num_calls[:, ch].tolist()
-        print '\tNum passes:', summary.num_passes[:, ch].tolist()
+    summary = summarizer.summarize(data, fs)
+    print(summary)
