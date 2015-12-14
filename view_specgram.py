@@ -2,41 +2,53 @@ import glob
 import sys
 import os
 
+from functools import partial
+
 from scipy.io import wavfile
 from matplotlib import pyplot as plt
 
-if len(sys.argv) != 2:
-    print('Usage: %s path_to_call_folder' % sys.argv[0])
-    exit()
+class SpecgramViewer(object):
+    def __init__(self, filenames):
+        self.filenames = filenames
+        self.file_index = 0
+        self.fig = plt.figure()
+        self.fig.canvas.mpl_connect('key_press_event', partial(self.key_press))
+        self.plot_current_call()
+        plt.show()
 
-# Change current working directory
-os.chdir(sys.argv[1])
-# Retrieve filenames
-filenames = glob.glob('*.wav')
-file_index = 0
+    def key_press(self, event):
+        if event.key in ('n', 'right'):
+            self.file_index = (self.file_index + 1) % len(self.filenames)
+            self.plot_current_call()
+        elif event.key in ('p', 'left'):
+            self.file_index = (self.file_index - 1) % len(self.filenames)
+            self.plot_current_call()
+        elif event.key in ('q', 'escape'):
+            plt.close()
 
-# Call visualization loop
-input_ = ''
-while input_ != 'q':
-    file_ = filenames[file_index]
-    fs, data = wavfile.read(file_)
-    if len(data.shape) == 1:
-        data = data.reshape(data.shape[0], 1)
+    def plot_current_call(self):
+        self.fig.clear()
 
-    for ch in range(data.shape[1]):
-        plt.subplot('%i1%i' % (data.shape[1], ch + 1))
-        plt.title('%s, channel %i' % (file_, ch + 1))
-        # TODO: edit spectrogram parameter
-        # SEE: http://matplotlib.org/api/pyplot_api.html#matplotlib.pyplot.specgram
-        plt.specgram(data[:, ch], Fs=fs)
+        filename = self.filenames[self.file_index]
+        fs, data = wavfile.read(filename)
+        if len(data.shape) == 1:
+            data = data.reshape(data.shape[0], 1)
 
-    plt.show(block=False)
-    input_ = ''
-    while not input_ in ('p', 'n', 'q'):
-        input_ = input('next (n), previous (p), quit (q): ')
-    if input_ == 'n':
-        file_index = (file_index + 1) % len(filenames)
-    if input_ == 'p':
-        file_index = (file_index - 1) % len(filenames)
+        for ch in range(data.shape[1]):
+            ax = self.fig.add_subplot(data.shape[1], 1, ch + 1)
+            ax.set_title('%s, channel %i' % (filename, ch + 1))
+            # TODO: edit spectrogram parameter
+            # SEE: http://matplotlib.org/api/pyplot_api.html#matplotlib.pyplot.specgram
+            ax.specgram(data[:, ch], Fs=fs)
+        self.fig.canvas.draw()
 
-    plt.close()
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        print('Usage: %s path_to_call_folder' % sys.argv[0])
+        exit()
+
+    # Change current working directory
+    os.chdir(sys.argv[1])
+    # Retrieve filenames
+    filenames = glob.glob('*.wav')
+    viewer = SpecgramViewer(filenames)
