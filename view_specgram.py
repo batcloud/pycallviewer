@@ -39,7 +39,7 @@ class SpecgramViewer(object):
         try:
             self.fs, self.data = wavfile.read(filename)
         except ValueError:
-            print('File %s cannot be read as a wav file.')
+            print('File %s cannot be read as a wav file.' % filename)
             return
         if len(self.data.shape) == 1:
             self.data = self.data.reshape(self.data.shape[0], 1)
