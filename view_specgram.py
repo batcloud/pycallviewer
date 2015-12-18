@@ -26,7 +26,7 @@ class SpecgramViewer(object):
         elif event.key in ('p', 'left'):
             self.file_index = (self.file_index - 1) % len(self.filenames)
             self.plot_current_call()
-        elif event.key in ('down'):
+        elif event.key in ('down',):
             print("".join((chr(27),"[2J",chr(27),"[H")))
             print(self.summarizer.summarize(self.data, self.fs))
         elif event.key in ('q', 'escape'):
@@ -36,7 +36,11 @@ class SpecgramViewer(object):
         self.fig.clear()
 
         filename = self.filenames[self.file_index]
-        self.fs, self.data = wavfile.read(filename)
+        try:
+            self.fs, self.data = wavfile.read(filename)
+        except ValueError:
+            print('File %s cannot be read as a wav file.')
+            return
         if len(self.data.shape) == 1:
             self.data = self.data.reshape(self.data.shape[0], 1)
 
