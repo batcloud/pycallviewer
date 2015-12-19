@@ -52,6 +52,14 @@ class SpecgramViewer(object):
             ax.specgram(self.data[:, ch], Fs=self.fs)
         self.fig.canvas.draw()
 
+import re
+numbers = re.compile(r'(\d+)')
+def sort_filename(value):
+    parts = numbers.split(value)
+    parts[0] = parts[0].lower()
+    parts[1::2] = map(int, parts[1::2])
+    return parts
+
 if __name__ == "__main__":
     if len(sys.argv) != 2:
         print('Usage: %s path_to_call_folder' % sys.argv[0])
@@ -60,5 +68,5 @@ if __name__ == "__main__":
     # Change current working directory
     os.chdir(sys.argv[1])
     # Retrieve filenames
-    filenames = glob.glob('*.wav')
+    filenames = sorted(glob.glob('*.wav'), key=sort_filename)
     viewer = SpecgramViewer(filenames)
