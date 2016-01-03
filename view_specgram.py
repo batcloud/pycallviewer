@@ -2,11 +2,14 @@ import glob
 import sys
 import os
 
+import numpy as np
+
 import summary
+import wavfile
 
 from functools import partial
 
-from scipy.io import wavfile
+from scipy.signal import spectrogram
 from matplotlib import pyplot as plt
 
 class SpecgramViewer(object):
@@ -36,11 +39,14 @@ class SpecgramViewer(object):
         self.fig.clear()
 
         filename = self.filenames[self.file_index]
+        print(filename)
+
         try:
             self.fs, self.data = wavfile.read(filename)
         except ValueError:
             print('File %s cannot be read as a wav file.' % filename)
             return
+
         if len(self.data.shape) == 1:
             self.data = self.data.reshape(self.data.shape[0], 1)
 
@@ -49,7 +55,18 @@ class SpecgramViewer(object):
             ax.set_title('%s, channel %i' % (filename, ch + 1))
             # TODO: edit spectrogram parameter
             # SEE: http://matplotlib.org/api/pyplot_api.html#matplotlib.pyplot.specgram
-            ax.specgram(self.data[:, ch], Fs=self.fs)
+            f_, t_, Sxx_, im = ax.specgram(self.data[:, ch], Fs=self.fs)
+            # f, t, Sxx = spectrogram(self.data[:, ch], fs=self.fs,
+            #                         detrend=False,
+            #                         window='hanning',
+            #                         noverlap=128)
+            # Sxx = 10. * np.log10(Sxx)
+            # # import pdb; pdb.set_trace()
+            # extent = min(t), max(t), f[0], f[-1]
+            # plt.imshow(Sxx, extent=extent)
+            # plt.axis('auto')
+            # # ax.pcolormesh(t, f, Sxx)
+
         self.fig.canvas.draw()
 
 import re
