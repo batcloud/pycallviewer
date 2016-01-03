@@ -1,39 +1,28 @@
+import mmap
 import sys
-import struct
 
 import numpy
 
+from scipy.io.wavfile import _read_data_chunk, _read_fmt_chunk, _read_riff_chunk
+
 def read(filename):
-    fid = open(filename, 'rb')
-    head = fid.read(60000)
+    with open(filename, 'rb') as fid:
+        with mmap.mmap(fid.fileno(), 0, access=mmap.ACCESS_READ) as mfid:
+            rindex = mfid.rfind(b'RIFF')
+            if rindex == -1:
+                raise ValueError('Missing RIFF tag in wav file.')
 
-    r = head.rfind(b'RIFF')
-    if r == -1:
-        raise Exception('Invalid wav file')
-    head = head[r:]
-    audio_format, num_channels, fs = struct.unpack('<hhi', head[20:28])
-    bits_per_sample, = struct.unpack('<h', head[34:36])
+            mfid.seek(rindex)
+            fsize = _read_riff_chunk(mfid)
+            if mfid.read(4) != b'fmt ':
+                raise ValueError('Missing format tag in wav file.')
 
-    data_ptr = head.rfind(b'data')
-    if data_ptr == -1:
-        raise Exception('Invalid wav file')
+            size, comp, noc, fs, sbytes, ba, bits = _read_fmt_chunk(mfid)
 
-    subchunk2_size, = struct.unpack('<i', head[data_ptr+4:data_ptr+8])
+            if mfid.read(4) != b'data':
+                raise ValueError('Missing data tag in wav file.')
 
-    if audio_format == 1:
-        fid.seek(data_ptr + r + 8)
-        if bits_per_sample == 8:
-            x = numpy.fromstring(fid.read(subchunk2_size), dtype='u1')
-        elif bits_per_sample == 16:
-            x = numpy.fromstring(fid.read(subchunk2_size), dtype='<i2')
-
-        if num_channels == 2:
-            x = x.reshape((-1, 2))
-        elif num_channels == 4:
-            x = x.reshape((-1, 4))
-    else:
-        raise Exception('Unsupported wav file')
-
+            x = _read_data_chunk(mfid, comp, noc, bits, False)
     return fs, x
 
 
@@ -43,7 +32,7 @@ if __name__ == "__main__":
 
     from scipy.io import wavfile
 
-    fs1, x1 = readwav(sys.argv[1])
-    # fs2, x2 = wavfile.read(sys.argv[1])
+    fs1, x1 = read(sys.argv[1])
+    fs2, x2 = wavfile.read(sys.argv[1])
 
-    import pdb; pdb.set_trace()
+    print(all(x1 == x2))
