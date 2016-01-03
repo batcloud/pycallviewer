@@ -39,7 +39,6 @@ class SpecgramViewer(object):
         self.fig.clear()
 
         filename = self.filenames[self.file_index]
-        print(filename)
 
         try:
             self.fs, self.data = wavfile.read(filename)
