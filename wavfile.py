@@ -27,12 +27,12 @@ def read(filename):
             # Ignore scipy warning on unknown wave file format
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                size, comp, noc, fs, sbytes, ba, bits = _read_fmt_chunk(mfid)
+                size, comp, noc, fs, sbytes, ba, bits = _read_fmt_chunk(mfid, is_big_endian=False)
 
             if mfid.read(4) != b'data':
                 raise ValueError('Missing data tag in wav file.')
 
-            x = _read_data_chunk(mfid, comp, noc, bits, False)
+            x = _read_data_chunk(mfid, comp, noc, bits, is_big_endian=False, mmap=False)
     return fs, x
 
 
