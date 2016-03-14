@@ -54,7 +54,7 @@ class SpecgramViewer(object):
             ax.set_title('%s, channel %i' % (filename, ch + 1))
             # TODO: edit spectrogram parameter
             # SEE: http://matplotlib.org/api/pyplot_api.html#matplotlib.pyplot.specgram
-            f_, t_, Sxx_, im = ax.specgram(self.data[:, ch], Fs=self.fs)
+            f_, t_, Sxx_, im = ax.specgram(self.data[:, ch], Fs=self.fs,  vmin=-43)
             # f, t, Sxx = spectrogram(self.data[:, ch], fs=self.fs,
             #                         detrend=False,
             #                         window='hanning',
