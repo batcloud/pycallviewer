@@ -32,7 +32,7 @@ def read(filename):
             if mfid.read(4) != b'data':
                 raise ValueError('Missing data tag in wav file.')
 
-            x = _read_data_chunk(mfid, comp, noc, bits, False)
+            x = _read_data_chunk(mfid, comp, noc, bits, is_big_endian=False, mmap=False)
     return fs, x
 
 
