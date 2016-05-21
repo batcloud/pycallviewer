@@ -34,6 +34,7 @@ class Outliner(object):
         self.min_link_len = kargs.pop('min_link_len', 6)
         self.baseline_thresh = kargs.pop('baseline_thresh', 20)
         self.trim_thresh = kargs.pop('trim_thresh', 10)
+        self.links_thresh = kargs.pop('links_thresh', -25)
 
         if not self.window_type in self.WINDOW_TYPES:
             raise TypeError('Outliner window_type arguments must be one in %s' %
@@ -139,6 +140,85 @@ class Outliner(object):
             xall_t = s_time_temp * 1e3
             # TODO: translate line [227, end]
             # output_links = links(...)
+            output_links = find_links(xall_X, xall_f, xall_t)
+
+    def find_links(X, f, t):
+        m, n = X.shape
+        if len(f) != m or len(t) != n:
+            raise Exception("ERROR: size mismatch between X and f and t.")
+
+        local_peaks = numpy.zeros(X.shape)
+        local_peaks[1:m-1, :] =  (X[1:m-1, :] >= X[:m-2, :] and
+                                  X[1:m-1, :] >  X[2:, :]   and
+                                  X[1:m-1, :] >= self.trim_thresh)
+        # Init smoothness variables:
+        deltaSize = 1;
+        ## generic abscissa matrix, [sec,unity]
+        z = numpy.ones((2*deltaSize + 1, 2))
+        z[:, 0] = numpy.arange(-deltaSize, deltaSize+1) * (t[1] - t[0]) * 1e-3
+        C = numpy.dot(numpy.linalg.inv(numpy.dot(z.T, z)), z.T);
+        C1 = C[0, :]
+        A = numpy.dot(z, C)
+        B = numpy.dot((A - numpy.eye(2*deltaSize + 1)).T,
+                      (A - numpy.eye(2*deltaSize + 1)))
+
+        # Find neighbor to the right and left of each frame:
+        ## row index of nn to the right; == 0 if no nn to the right
+        nnRight = numpy.zeros(X.shape)
+        ## row index of nn to the left; == 0 if no nn to the left
+        nnLeft = numpy.zeros(X.shape)
+
+        currentPeaks = numpy.flatnonzero(localPeaks[:, 0])
+        rightPeaks = numpy.flatnonzero(localPeaks[:, 1])
+        for p in range(1, n-1):
+            leftPeaks = currentPeaks
+            currentPeaks = rightPeaks
+            rightPeaks = numpy.flatnonzero(localPeaks[:, p+1])
+
+            if len(currentPeaks) > 0:
+                # right link only
+                if len(leftPeaks) == 0 and len(rightPeaks) > 0:
+                    neighborPeaks = rightPeaks
+                    for peak in currentPeaks:
+                        E = numpy.dot(X[peak, p], numpy.ones((1, len(neighborPeaks))))
+                        dF = (f[peak] - f[neighborPeaks]) / (t[p] - t[p-1])
+                        LL = eval_gmm(numpy.vstack((E, dF)), model)
+                        b = numpy.argmax(LL)
+                        if LL[b] > self.links_thresh:
+                            nnRight[peak, p] = neighborPeaks[b]
+
+                # left link only
+                elif len(leftPeaks) > 0 and len(rightPeaks) == 0:
+                    neighborPeaks = leftPeaks
+                    for peak in currentPeaks:
+                        E = numpy.dot(X[peak, p], numpy.ones((1, len(neighborPeaks))))
+                        dF = (f[peak] - f[neighborPeaks]) / (t[p] - t[p-1])
+                        LL = eval_gmm(numpy.vstack((E, dF)), model)
+                        b = numpy.argmax(LL)
+                        if LL[b] > self.links_thresh:
+                            nnLeft[peak, p] = neighborPeaks[b]
+                # left and right link
+                elif len(leftPeaks) > 0 and len(rightPeaks) > 0:
+                    bbb, aaa = numpy.meshgrid(range(len(rightPeaks)),
+                                              range(len(leftPeaks)))
+                    F1 = numpy.vstack((f[currentPeaks[list(aaa.flat)],
+                                       numpy.ones(aaa.shape[0] * aaa.shape[1],
+                                       f[currentPeaks[list(bbb.flat)]))) * 1e3
+                    for peak in currentPeaks:
+                        F1[1, :] = f[peak] * 1e3
+                        dF = numpy.dot(C1, F1) * 1e-6 #kHz/ms
+                        sF = numpy.maximum((40, 10*numpy.log10(numpy.sum(F1 * numpy.dot(B, F1))) / (2 * deltaSize + 1) + 1)) #dB, averaged
+                        gmmFeatures = numpy.vstack((X[peak, p] * numpy.ones(len(dF)), dF, sF))
+                        LL = eval_gmm(gmmFeatures, model)
+                        b = numpy.argmax(LL)
+                        if LL[b] > self.links_thresh:
+                            nnLeft[peak, p] = leftPeaks[b % len(leftPeaks)]
+                            # TODO: Double check this is rightPeaks and leftPeaks same size?
+                            nnRight[peak, p] = rightPeaks[int(b / len(leftPeaks))]
+
+        # Find reciprocal nearest neighbors, link together:
+        nnBoth = numpy.zeros(X.shape)
+        # link07.m line 187 and onward
 
 if __name__ == "__main__":
     from scipy.io import wavfile
