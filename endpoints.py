@@ -72,7 +72,7 @@ class Outliner(object):
         self.fft_size = 2**(np.ceil(np.log2(self.frame_size)) + 2)
         # spectrogram row, rows 1..hpfRow removed
         # from spectrogram for speed/memory
-        hpf_row = np.int(np.round(self.HPFcutoff * 1e3 / fs * fft_size))
+        self.hpf_row = np.int(np.round(self.HPFcutoff * 1e3 / fs * self.fft_size))
 
         # Find number of chunks to process, non-overlapping:
         #  Last bit in x used in last chunk
@@ -117,25 +117,25 @@ class Outliner(object):
             for j in range(num_columns):
                 idx = j * frame_incr
                 x3[:, j] = x2[idx:idx+self.frame_size] * self.ham_window
-            s = fft(x3, self.fft_size)
+            sxx = fft(x3, n=self.fft_size, axis=0)
 
             # Remove low-freq rows, faster computation, less memory
-            s = s[self.hpf_row:int(fft_size/2)+1, :num_columns]
+            sxx = sxx[self.hpf_row:int(self.fft_size/2)+1, :num_columns]
             # Removes residual imag part
-            s = abs(s)**2
+            sxx = abs(sxx)**2
             s_time_temp = (np.arange(num_columns) * frame_incr
                            + self.frame_size / 2) / fs
 
             if self.sms == 'sms':
                 # Apply spectral mean subtraction
-                s = self.spectral_mean_subtraction(s)
+                sxx = self.spectral_mean_subtraction(sxx)
             elif self.sms == 'mean':
                 # apply median scaling
-                s = self.median_scaling(s)
+                sxx = self.median_scaling(sxx)
 
             #TODO refctor the name of these variables
-            xall_X = s
-            xall_f = (np.arange(s.shape[0]) + self.hpf_row)\
+            xall_X = sxx
+            xall_f = (np.arange(sxx.shape[0]) + self.hpf_row)\
                      * fs / self.fft_size * 1e-3
             xall_t = s_time_temp * 1e3
             # TODO: translate line [227, end]
