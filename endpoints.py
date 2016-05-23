@@ -8,9 +8,40 @@ from itertools import groupby, zip_longest
 
 from scipy.signal import ellipord, ellip, lfilter
 from scipy.fftpack import fft
+from scipy.io import loadmat
 
-#TODO: load links model
-#TODO: load echo model
+class GaussianModel(object):
+    def __init__(self, name, filename=None, LR=False):
+        self.model_name = name
+        if filename is not None:
+            content = loadmat(filename)
+            model = content[self.model_name]
+            self.mu = model['mu'][0, 0]
+            self.sig = model['sig'][0, 0]
+            self.sigInv = model['sigInv'][0, 0]
+            self.w = model['w'][0, 0]
+            self.prefactor = model['prefactor'][0, 0]
+            if LR:
+                self.mu = self.mu[:2]
+                self.sig = self.sig[:2, :2]
+                self.sigInv = np.linalg.inv(self.sig)
+                self.prefactor = -1/2 * np.log(np.linalg.det(self.sig)) + np.log(self.w)
+            else:
+                self.mu = self.mu[[0,1,3]]
+                self.sig = self.sig[[[0],[1],[3]], [0,1,3]]
+                self.sigInv = np.linalg.inv(self.sig)
+                self.prefactor = -1/2 * np.log(np.linalg.det(self.sig)) + np.log(self.w)
+
+    def eval(self, x):
+        d, N = x.shape
+        M = self.mu.shape[1]
+        if M == 1:
+            xx = x - self.mu[:d, np.zeros(N, dtype=np.int)]
+            y = self.prefactor - np.sum(np.dot(self.sigInv, xx) * xx, axis=0)/2
+        else:
+            raise Exception("Feature yet supported")
+            pass
+        return y.flatten()
 
 class Outliner(object):
 
@@ -138,52 +169,56 @@ class Outliner(object):
             xall_f = (np.arange(sxx.shape[0]) + self.hpf_row)\
                      * fs / self.fft_size * 1e-3
             xall_t = s_time_temp * 1e3
-            # TODO: translate line [227, end]
-            # output_links = links(...)
-            output_links = find_links(xall_X, xall_f, xall_t)
 
-    def find_links(X, f, t):
+
+            # TODO: translate getCallEndpoints line [227, end]
+            # output_links = links(...)
+            output_links = self.find_links(xall_X, xall_f, xall_t)
+
+    def find_links(self, X, f, t):
         m, n = X.shape
         if len(f) != m or len(t) != n:
             raise Exception("ERROR: size mismatch between X and f and t.")
 
-        local_peaks = numpy.zeros(X.shape)
-        local_peaks[1:m-1, :] =  (X[1:m-1, :] >= X[:m-2, :] and
-                                  X[1:m-1, :] >  X[2:, :]   and
-                                  X[1:m-1, :] >= self.trim_thresh)
+        localPeaks = np.zeros(X.shape)
+        localPeaks[1:m-1, :] =  np.logical_and(
+                                    np.logical_and(X[1:m-1, :] >= X[:m-2, :],
+                                                   X[1:m-1, :] >  X[2:, :]),
+                                    X[1:m-1, :] >= self.trim_thresh
+                                 )
         # Init smoothness variables:
         deltaSize = 1;
         ## generic abscissa matrix, [sec,unity]
-        z = numpy.ones((2*deltaSize + 1, 2))
-        z[:, 0] = numpy.arange(-deltaSize, deltaSize+1) * (t[1] - t[0]) * 1e-3
-        C = numpy.dot(numpy.linalg.inv(numpy.dot(z.T, z)), z.T);
+        z = np.ones((2*deltaSize + 1, 2))
+        z[:, 0] = np.arange(-deltaSize, deltaSize+1) * (t[1] - t[0]) * 1e-3
+        C = np.dot(np.linalg.inv(np.dot(z.T, z)), z.T);
         C1 = C[0, :]
-        A = numpy.dot(z, C)
-        B = numpy.dot((A - numpy.eye(2*deltaSize + 1)).T,
-                      (A - numpy.eye(2*deltaSize + 1)))
+        A = np.dot(z, C)
+        B = np.dot((A - np.eye(2*deltaSize + 1)).T,
+                   (A - np.eye(2*deltaSize + 1)))
 
         # Find neighbor to the right and left of each frame:
         ## row index of nn to the right; == 0 if no nn to the right
-        nnRight = numpy.zeros(X.shape)
+        nnRight = np.zeros(X.shape)
         ## row index of nn to the left; == 0 if no nn to the left
-        nnLeft = numpy.zeros(X.shape)
+        nnLeft = np.zeros(X.shape)
 
-        currentPeaks = numpy.flatnonzero(localPeaks[:, 0])
-        rightPeaks = numpy.flatnonzero(localPeaks[:, 1])
+        currentPeaks = np.flatnonzero(localPeaks[:, 0])
+        rightPeaks = np.flatnonzero(localPeaks[:, 1])
         for p in range(1, n-1):
             leftPeaks = currentPeaks
             currentPeaks = rightPeaks
-            rightPeaks = numpy.flatnonzero(localPeaks[:, p+1])
+            rightPeaks = np.flatnonzero(localPeaks[:, p+1])
 
             if len(currentPeaks) > 0:
                 # right link only
                 if len(leftPeaks) == 0 and len(rightPeaks) > 0:
                     neighborPeaks = rightPeaks
                     for peak in currentPeaks:
-                        E = numpy.dot(X[peak, p], numpy.ones((1, len(neighborPeaks))))
+                        E = np.dot(X[peak, p], np.ones((1, len(neighborPeaks))))
                         dF = (f[peak] - f[neighborPeaks]) / (t[p] - t[p-1])
-                        LL = eval_gmm(numpy.vstack((E, dF)), model)
-                        b = numpy.argmax(LL)
+                        LL = links_model_lr.eval(np.vstack((E, dF)))
+                        b = np.argmax(LL)
                         if LL[b] > self.links_thresh:
                             nnRight[peak, p] = neighborPeaks[b]
 
@@ -191,37 +226,59 @@ class Outliner(object):
                 elif len(leftPeaks) > 0 and len(rightPeaks) == 0:
                     neighborPeaks = leftPeaks
                     for peak in currentPeaks:
-                        E = numpy.dot(X[peak, p], numpy.ones((1, len(neighborPeaks))))
+                        E = np.dot(X[peak, p], np.ones((1, len(neighborPeaks))))
                         dF = (f[peak] - f[neighborPeaks]) / (t[p] - t[p-1])
-                        LL = eval_gmm(numpy.vstack((E, dF)), model)
-                        b = numpy.argmax(LL)
+                        LL = links_model_lr.eval(np.vstack((E, dF)))
+                        b = np.argmax(LL)
                         if LL[b] > self.links_thresh:
                             nnLeft[peak, p] = neighborPeaks[b]
+
                 # left and right link
                 elif len(leftPeaks) > 0 and len(rightPeaks) > 0:
-                    bbb, aaa = numpy.meshgrid(range(len(rightPeaks)),
-                                              range(len(leftPeaks)))
-                    F1 = numpy.vstack((f[currentPeaks[list(aaa.flat)],
-                                       numpy.ones(aaa.shape[0] * aaa.shape[1],
-                                       f[currentPeaks[list(bbb.flat)]))) * 1e3
+                    bbb, aaa = np.meshgrid(range(len(rightPeaks)),
+                                           range(len(leftPeaks)))
+                    F1 = np.vstack((f[leftPeaks[aaa.flatten()]],
+                                    np.ones(aaa.shape[0] * aaa.shape[1]),
+                                    f[rightPeaks[bbb.flatten()]])) * 1e3
                     for peak in currentPeaks:
                         F1[1, :] = f[peak] * 1e3
-                        dF = numpy.dot(C1, F1) * 1e-6 #kHz/ms
-                        sF = numpy.maximum((40, 10*numpy.log10(numpy.sum(F1 * numpy.dot(B, F1))) / (2 * deltaSize + 1) + 1)) #dB, averaged
-                        gmmFeatures = numpy.vstack((X[peak, p] * numpy.ones(len(dF)), dF, sF))
-                        LL = eval_gmm(gmmFeatures, model)
-                        b = numpy.argmax(LL)
+                        dF = np.dot(C1, F1) * 1e-6 #kHz/ms
+                        sF = np.maximum(40, 10*np.log10(np.sum(F1 * np.dot(B, F1), axis=0)) / (2 * deltaSize + 1) + 1) #dB, averaged
+                        gmmFeatures = np.vstack((X[peak, p] * np.ones(len(dF)), dF, sF))
+                        LL = links_model.eval(gmmFeatures)
+                        b = np.argmax(LL)
                         if LL[b] > self.links_thresh:
                             nnLeft[peak, p] = leftPeaks[b % len(leftPeaks)]
                             # TODO: Double check this is rightPeaks and leftPeaks same size?
                             nnRight[peak, p] = rightPeaks[int(b / len(leftPeaks))]
 
         # Find reciprocal nearest neighbors, link together:
-        nnBoth = numpy.zeros(X.shape)
-        # link07.m line 187 and onward
+        nnBoth = np.zeros(X.shape)
+        for p in range(1, n-1):
+            currentPeaks = np.flatnonzero(localPeaks[:, p])
+            for peak in currentPeaks:
+                if nnRight[peak, p] > 0 and nnLeft[nnRight[peak, p], p+1] == peak:
+                    nnBoth[peak, p] = nnRight[peak, p]
+        # link07.m line 198 and onward
+        linkOutput = []
+        nnRight = nnBoth
+        for p in range(n-1):
+            # Get indices of links starting in current frame
+            for g in np.flatnonzero(nnRight[:, p]):
+                tempLink = np.array([[g, p, X[g, p]]])
+                while nnRight[tempLink[-1, 0], tempLink[-1, 1]] > 0:
+                    new_row = [nnRight[tempLink[-1, 0], tempLink[-1, 1]],
+                               tempLink[-1, 1] + 1,
+                               X[nnRight[tempLink[-1, 0], tempLink[-1, 1]], tempLink[-1, 1]+1]]
+                    tempLink = np.vstack((tempLink, new_row))
+                    nnRight[tempLink[-2, 0], tempLink[-2, 1]] == 0
+                if tempLink.shape[0] >= self.min_link_len:
+                    linkOutput.append(tempLink)
+
+        return linkOuput
 
 if __name__ == "__main__":
-    from scipy.io import wavfile
+    import wavfile
     import sys
 
     if len(sys.argv) != 2:
@@ -232,6 +289,9 @@ if __name__ == "__main__":
     except IOError:
         print("Cannot find file: %s" % sys.argv[1])
         exit()
+
+    links_model = GaussianModel('linksModel', '/Users/felix/Documents/batcloud/callviewer 2/callviewer/linksModel.mat')
+    links_model_lr = GaussianModel('linksModel', '/Users/felix/Documents/batcloud/callviewer 2/callviewer/linksModel.mat', LR=True)
 
     outliner = Outliner(HPFcutoff = 15)
     outline = outliner.extract_features(data, fs)
