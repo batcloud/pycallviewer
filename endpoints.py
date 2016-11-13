@@ -175,6 +175,24 @@ class Outliner(object):
             # output_links = links(...)
             output_links = self.find_links(xall_X, xall_f, xall_t)
 
+            # For each link, find spectral max in previous window
+            for j, link in enumerate(output_links):
+                t = np.hstack((link, np.zeros((link.shape[0], 1)))) # [FFT bin,frame,dB,mask dB]
+                for frame in t:
+                    min_idx = max(0, frame[1] - round(self.window_prev_links * self.frame_rate))
+                    frame[3] = sxx[frame[0], range(int(min_idx), int(frame[1]))].max()
+                output_links[j] = t
+
+            # Adjust time/frequency for each link
+            for link in output_links: # for p=1:length(outputLinks),
+                link[:, 0] = (link[:, 0] + self.hpf_row - 1)/ self.fft_size * fs # Hz
+                link[:, 1] = s_time_temp[link[:, 1].astype(int)] + i * self.chunk_size # sec
+
+            # Get local/global features:
+            # getCallEndpoints18.m line 245 and onward
+
+
+
     def find_links(self, X, f, t):
         m, n = X.shape
         if len(f) != m or len(t) != n:
@@ -275,7 +293,7 @@ class Outliner(object):
                 if tempLink.shape[0] >= self.min_link_len:
                     linkOutput.append(tempLink)
 
-        return linkOuput
+        return linkOutput
 
 if __name__ == "__main__":
     import wavfile
