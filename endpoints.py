@@ -170,9 +170,6 @@ class Outliner(object):
                      * fs / self.fft_size * 1e-3
             xall_t = s_time_temp * 1e3
 
-
-            # TODO: translate getCallEndpoints line [227, end]
-            # output_links = links(...)
             output_links = self.find_links(xall_X, xall_f, xall_t)
 
             # For each link, find spectral max in previous window
@@ -180,7 +177,8 @@ class Outliner(object):
                 t = np.hstack((link, np.zeros((link.shape[0], 1)))) # [FFT bin,frame,dB,mask dB]
                 for frame in t:
                     min_idx = max(0, frame[1] - round(self.window_prev_links * self.frame_rate))
-                    frame[3] = sxx[frame[0], range(int(min_idx), int(frame[1]))].max()
+                    # TODO: verify range upper bound
+                    frame[3] = sxx[frame[0], range(int(min_idx), int(frame[1]+1))].max()
                 output_links[j] = t
 
             # Adjust time/frequency for each link
@@ -190,8 +188,74 @@ class Outliner(object):
 
             # Get local/global features:
             # getCallEndpoints18.m line 245 and onward
+            self.get_features(output_links)
 
+    def get_features(self, output_links):
+        # Init linear regression variables:
+        # generic abscissa matrix, [sec,unity]
+        z = np.ones((2*self.delta_size + 1, 2))
+        z[:, 0] = np.arange(-self.delta_size, self.delta_size + 1)
+        # Hz, prefactor
+        C = np.dot(np.linalg.inv(np.dot(z.T, z)), z.T)
+        # Hz, linear regression slope from first row of C
+        C1 = C[0,:]
+        A = np.dot(z, C)
 
+        # unitless, used to find sum-of-squares error
+        B = A - np.eye(2*self.delta_size+1)
+        B = np.dot(B.T, B)
+
+        output_local = []
+        output_global = []
+        for link in output_links:
+            # Get local features:
+            F0 = link[:,0].T # Hz, ROW vector
+            A0 = link[:,2].T # dB, ROW vector
+
+            # Pad endings
+            F1 = np.hstack((F0[[0]*self.delta_size], F0, F0[[-1]*self.delta_size]))
+            A1 = np.hstack((A0[[0]*self.delta_size], A0, A0[[-1]*self.delta_size]))
+
+            dF0 = np.zeros(F0.shape[0])  # Slope of F0
+            dA0 = np.zeros(A0.shape[0])  # Slope of A0
+            ddF0 = np.zeros(F0.shape[0]) # Concavity of F0
+            ddA0 = np.zeros(A0.shape[0]) # Concavity of A0
+            sF0 = np.zeros(F0.shape[0])  # Smoothness of F0
+            sA0 = np.zeros(A0.shape[0])  # Smoothness of A0
+
+            # Hz, dithered for non-zero smoothness
+            # TODO: find out to what correspond fft_res before trying this
+            # FNoisy = F1+(np.random.random(F1.shape)-.5) * self.fft_res;
+            FNoisy = F1 # Hz
+
+            for i in range(len(dF0)):
+                F = FNoisy[i:(i+2*self.delta_size+1)].T #  COLUMN vector
+                dF0[i] = np.dot(C1, F) #slope for linear regression
+                sF0[i] = np.dot(np.dot(F.T, B), F) # sum-of-squares error for linear regression
+                F = A1[i:(i+2*self.delta_size+1)].T # COLUMN vector
+                dA0[i] = np.dot(C1, F)
+                sA0[i] = np.dot(np.dot(F.T, B), F)
+
+            sF0 = np.maximum(40,10*np.log10(sF0/(2*self.delta_size+1)+1)) # linear regression error, dB (averaged)
+            sA0 = 10*np.log10(sA0/(2*self.delta_size+1)) # linear regression error, dB (averaged)
+
+            F1 = np.hstack([dF0[[0]*self.delta_size], dF0, dF0[[-1] * self.delta_size]]) # pad endings
+            A1 = np.hstack([dA0[[0]*self.delta_size], dA0, dA0[[-1] * self.delta_size]]) # pad endings
+
+            for i in range(len(dF0)):
+                F = F1[i:(i+2*self.delta_size+1)].T #  COLUMN vector
+                ddF0[i] = np.dot(C1, F) # concavity is slope of slope for linear regression
+                F = A1[i:(i+2*self.delta_size+1)].T # COLUMN vector
+                ddA0[i] = np.dot(C1, F)
+
+            dF0 = dF0/1e6   # Hz/sec --> kHz/ms
+            ddF0 = ddF0/1e9 # Hz/sec/sec --> kHz/ms/ms
+            dA0 = dA0/1e3   # dB/sec --> dB/ms
+            ddA0 = ddA0/1e6 # dB/sec/sec --> dB/ms/ms
+
+            # Save local features -- Hz,sec,dB,kHz/ms,dB/ms,kHz/ms/ms,dB/ms/ms,dB,dB,echo dB:
+            # TODO: translate lines 162 to 183 of getFeatures07.m
+            import pdb; pdb.set_trace()
 
     def find_links(self, X, f, t):
         m, n = X.shape
