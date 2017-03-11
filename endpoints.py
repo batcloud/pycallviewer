@@ -111,10 +111,9 @@ class Outliner(object):
 
         # Init spectrogram
         self.ham_window = self.window(self.frame_size)
-        # Process each chunk
+        # Process each channel
         for ch in range(num_ch):
             links = self.extract_links(x[:, ch], fs)
-
 
     def spectral_mean_subtraction(self, s):
         # Truncate at 5th percentile of non-zero values
