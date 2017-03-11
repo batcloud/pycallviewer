@@ -173,12 +173,11 @@ class Outliner(object):
 
             # For each link, find spectral max in previous window
             for j, link in enumerate(output_links):
-                t = np.hstack((link, np.zeros((link.shape[0], 1)))) # [FFT bin,frame,dB,mask dB]
-                for frame in t:
+                # t = np.hstack((link, np.zeros((len(link), 1)))) # [FFT bin,frame,dB,mask dB]
+                for frame in link:
                     min_idx = max(0, frame[1] - round(self.window_prev_links * self.frame_rate))
-                    # TODO: verify range upper bound
-                    frame[3] = sxx[frame[0], range(int(min_idx), int(frame[1]+1))].max()
-                output_links[j] = t
+                    frame.append(sxx[frame[0], range(int(min_idx), int(frame[1]+1))].max())
+                output_links[j] = np.array(link)
 
             # Adjust time/frequency for each link
             for link in output_links: # for p=1:length(outputLinks),
