@@ -336,7 +336,7 @@ class Outliner(object):
                     neighborPeaks = rightPeaks
                     for peak in currentPeaks:
                         E = np.dot(X[peak, p], np.ones((1, len(neighborPeaks))))
-                        dF = (f[peak] - f[neighborPeaks]) / (t[p] - t[p-1])
+                        dF = (f[peak] - f[neighborPeaks]) / (t[p] - t[p+1])
                         LL = links_model_lr.eval(np.vstack((E, dF)))
                         b = np.argmax(LL)
                         if LL[b] > self.links_thresh:
