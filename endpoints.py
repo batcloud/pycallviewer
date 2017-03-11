@@ -10,6 +10,13 @@ from scipy.signal import ellipord, ellip, lfilter
 from scipy.fftpack import fft
 from scipy.io import loadmat
 
+GlobalFeatures = namedtuple('GlobalFeatures',
+                            ['startTime', 'stopTime', 'duration',
+                             'Fmin', 'Fmax', 'FPercentile', 'E',
+                             'FME', 'FMETime', 'dFmed', 'dEmed',
+                             'ddFmed', 'ddEmed', 'sFmed', 'sEmed'
+                            ])
+
 class GaussianModel(object):
     def __init__(self, name, filename=None, LR=False):
         self.model_name = name
@@ -132,6 +139,8 @@ class Outliner(object):
         # samples/frame, fractional
         frame_incr = fs / self.frame_rate
         step = fs * self.chunk_size
+        output_global = []
+        output_local = []
         for i in range(0, len(x), step):
             # Get spectrogram/link of chunk
             x1 = x[i:i+step]
@@ -186,7 +195,11 @@ class Outliner(object):
 
             # Get local/global features:
             # getCallEndpoints18.m line 245 and onward
-            self.get_features(output_links)
+            oglobal, olocal = self.get_features(output_links)
+
+            output_global.extend(oglobal)
+            output_local.extend(olocal)
+        return output_global, output_local
 
     def get_features(self, output_links):
         # Init linear regression variables:
@@ -253,7 +266,34 @@ class Outliner(object):
 
             # Save local features -- Hz,sec,dB,kHz/ms,dB/ms,kHz/ms/ms,dB/ms/ms,dB,dB,echo dB:
             # TODO: translate lines 162 to 183 of getFeatures07.m
-            import pdb; pdb.set_trace()
+            local_features = [link[:, :3], dF0, dA0, ddF0, ddA0, sF0, sA0, link[:, 3]]
+            global_features = {}
+            # Start time(ms),End time(ms),Duration(ms),Fmin(Hz),
+            # Fmax(Hz),F0 percentiles(Hz),FME(Hz),E(dB),FMETime(ms),
+            # median dF0(kHz/ms),median dA0(dB/ms),median ddF0(kHz/ms/ms),
+            # median ddA0(dB/ms/ms), median sF0(dB), median sA0(dB)
+            global_features['startTime'] = link[0, 1] * 1e3
+            global_features['stopTime']  = link[-1, 1] * 1e3
+            global_features['duration']  = global_features['stopTime'] - global_features['startTime']
+            global_features['Fmin'] = np.min(F0)
+            global_features['Fmax'] = np.max(F0)
+            global_features['FPercentile'] = np.percentile(F0, range(10, 100, 10), interpolation='nearest')
+
+            a0_max_idx = np.argmax(A0)
+            global_features['E'] = A0[a0_max_idx]
+            global_features['FME'] = F0[a0_max_idx]
+            global_features['FMETime'] = (link[a0_max_idx, 1] - link[0, 1]) * 1e3
+            global_features['dFmed'] = np.median(dF0)
+            global_features['dEmed'] = np.median(dA0)
+            global_features['ddFmed'] = np.median(ddF0)
+            global_features['ddEmed'] = np.median(ddA0)
+            global_features['sFmed'] = np.median(sF0)
+            global_features['sEmed'] = np.median(sA0)
+
+            output_local.append(local_features)
+            output_global.append(GlobalFeatures(**global_features))
+
+        return output_local, output_global
 
     def find_links(self, X, f, t):
         m, n = X.shape
