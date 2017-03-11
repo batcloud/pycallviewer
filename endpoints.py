@@ -281,9 +281,9 @@ class Outliner(object):
 
         # Find neighbor to the right and left of each frame:
         ## row index of nn to the right; == 0 if no nn to the right
-        nnRight = np.zeros(X.shape)
+        nnRight = np.zeros(X.shape, dtype=int)
         ## row index of nn to the left; == 0 if no nn to the left
-        nnLeft = np.zeros(X.shape)
+        nnLeft = np.zeros(X.shape, dtype=int)
 
         currentPeaks = np.flatnonzero(localPeaks[:, 0])
         rightPeaks = np.flatnonzero(localPeaks[:, 1])
@@ -335,7 +335,7 @@ class Outliner(object):
                             nnRight[peak, p] = rightPeaks[int(b / len(leftPeaks))]
 
         # Find reciprocal nearest neighbors, link together:
-        nnBoth = np.zeros(X.shape)
+        nnBoth = np.zeros(X.shape, dtype=int)
         for p in range(1, n-1):
             currentPeaks = np.flatnonzero(localPeaks[:, p])
             for peak in currentPeaks:
@@ -344,17 +344,18 @@ class Outliner(object):
         # link07.m line 198 and onward
         linkOutput = []
         nnRight = nnBoth
+
         for p in range(n-1):
             # Get indices of links starting in current frame
             for g in np.flatnonzero(nnRight[:, p]):
-                tempLink = np.array([[g, p, X[g, p]]])
-                while nnRight[tempLink[-1, 0], tempLink[-1, 1]] > 0:
-                    new_row = [nnRight[tempLink[-1, 0], tempLink[-1, 1]],
-                               tempLink[-1, 1] + 1,
-                               X[nnRight[tempLink[-1, 0], tempLink[-1, 1]], tempLink[-1, 1]+1]]
-                    tempLink = np.vstack((tempLink, new_row))
-                    nnRight[tempLink[-2, 0], tempLink[-2, 1]] == 0
-                if tempLink.shape[0] >= self.min_link_len:
+                tempLink = [[g, p, X[g, p]]]
+                while nnRight[tempLink[-1][0], tempLink[-1][1]] > 0:
+                    new_row = [nnRight[tempLink[-1][0], tempLink[-1][1]],
+                               tempLink[-1][1] + 1,
+                               X[nnRight[tempLink[-1][0], tempLink[-1][1]], tempLink[-1][1]+1]]
+                    tempLink.append(new_row)
+                    nnRight[tempLink[-2][0], tempLink[-2][1]] = 0
+                if len(tempLink) >= self.min_link_len:
                     linkOutput.append(tempLink)
 
         return linkOutput
