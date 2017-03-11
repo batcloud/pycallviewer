@@ -145,7 +145,7 @@ class Outliner(object):
             x2 = np.hstack((x1, np.zeros(self.frame_size)))
             x3 = np.zeros((self.frame_size, num_columns))
             for j in range(num_columns):
-                idx = j * frame_incr
+                idx = int(round(j * frame_incr))
                 x3[:, j] = x2[idx:idx+self.frame_size] * self.ham_window
             sxx = fft(x3, n=self.fft_size, axis=0)
 
