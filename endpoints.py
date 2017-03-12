@@ -210,7 +210,8 @@ class Outliner(object):
         # Init linear regression variables:
         # generic abscissa matrix, [sec,unity]
         z = np.ones((2*self.delta_size + 1, 2))
-        z[:, 0] = np.arange(-self.delta_size, self.delta_size + 1)
+        z[:, 0] = np.arange(-self.delta_size, self.delta_size + 1) / self.frame_rate
+
         # Hz, prefactor
         C = np.dot(np.linalg.inv(np.dot(z.T, z)), z.T)
         # Hz, linear regression slope from first row of C
