@@ -141,9 +141,17 @@ class Outliner(object):
         step = fs * self.chunk_size
         output_global = []
         output_local = []
-        for i in range(0, len(x), step):
+        # Find number of chunks to process, non-overlapping:
+        #  Last bit in x used in last chunk
+        num_chunks = max(1, np.int(x.shape[0]/fs/self.chunk_size))
+        # Process each chunk
+        for i in range(num_chunks):
             # Get spectrogram/link of chunk
-            x1 = x[i:i+step]
+            if i < num_chunks - 1:
+                x1 = x[i*step:(i+1)*step]
+            else:
+                x1 = x[i*step:]
+
             x1 = x1 - np.mean(x1)
             # Skip chunk if all zeros
             if np.sum(np.abs(x1)) == 0:
