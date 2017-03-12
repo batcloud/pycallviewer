@@ -183,6 +183,7 @@ class Outliner(object):
             xall_t = s_time_temp * 1e3
 
             output_links = self.find_links(xall_X, xall_f, xall_t)
+            # TODO[DEBUG]: verify result from this line to the return.
 
             # For each link, find spectral max in previous window
             for j, link in enumerate(output_links):
@@ -269,7 +270,6 @@ class Outliner(object):
             ddA0 = ddA0/1e6 # dB/sec/sec --> dB/ms/ms
 
             # Save local features -- Hz,sec,dB,kHz/ms,dB/ms,kHz/ms/ms,dB/ms/ms,dB,dB,echo dB:
-            # TODO: translate lines 162 to 183 of getFeatures07.m
             local_features = [link[:, :3], dF0, dA0, ddF0, ddA0, sF0, sA0, link[:, 3]]
             global_features = {}
             # Start time(ms),End time(ms),Duration(ms),Fmin(Hz),
@@ -373,7 +373,6 @@ class Outliner(object):
                         b = np.argmax(LL)
                         if LL[b] > self.links_thresh:
                             nnLeft[peak, p] = leftPeaks[b % len(leftPeaks)]
-                            # TODO: Double check this is rightPeaks and leftPeaks same size?
                             nnRight[peak, p] = rightPeaks[int(b / len(leftPeaks))]
 
         # Find reciprocal nearest neighbors, link together:
