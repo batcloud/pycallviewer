@@ -112,10 +112,6 @@ class Outliner(object):
         # from spectrogram for speed/memory
         self.hpf_row = np.int(np.round(self.HPFcutoff * 1e3 / fs * self.fft_size))
 
-        # Find number of chunks to process, non-overlapping:
-        #  Last bit in x used in last chunk
-        num_chunks = max(1, np.int(x.shape[0]/fs/self.chunk_size))
-
         # Init spectrogram
         self.ham_window = self.window(self.frame_size)
         # Process each channel
