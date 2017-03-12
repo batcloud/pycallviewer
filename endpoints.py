@@ -363,8 +363,8 @@ class Outliner(object):
 
                 # left and right link
                 elif len(leftPeaks) > 0 and len(rightPeaks) > 0:
-                    bbb, aaa = np.meshgrid(range(len(rightPeaks)),
-                                           range(len(leftPeaks)))
+                    aaa, bbb = np.meshgrid(range(len(leftPeaks)),
+                                           range(len(rightPeaks)))
                     F1 = np.vstack((f[leftPeaks[aaa.flatten()]],
                                     np.ones(aaa.shape[0] * aaa.shape[1]),
                                     f[rightPeaks[bbb.flatten()]])) * 1e3
