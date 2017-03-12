@@ -326,10 +326,10 @@ class Outliner(object):
                    (A - np.eye(2*deltaSize + 1)))
 
         # Find neighbor to the right and left of each frame:
-        ## row index of nn to the right; == 0 if no nn to the right
-        nnRight = np.zeros(X.shape, dtype=int)
-        ## row index of nn to the left; == 0 if no nn to the left
-        nnLeft = np.zeros(X.shape, dtype=int)
+        ## row index of nn to the right; ma.masked if no nn to the right
+        nnRight = np.ma.zeros(X.shape, dtype=int); nnRight.mask = True
+        ## row index of nn to the left; ma.masked if no nn to the left
+        nnLeft = np.ma.zeros(X.shape, dtype=int); nnLeft.mask = True
 
         currentPeaks = np.flatnonzero(localPeaks[:, 0])
         rightPeaks = np.flatnonzero(localPeaks[:, 1])
@@ -381,11 +381,11 @@ class Outliner(object):
                             nnRight[peak, p] = rightPeaks[int(b / len(leftPeaks))]
 
         # Find reciprocal nearest neighbors, link together:
-        nnBoth = np.zeros(X.shape, dtype=int)
+        nnBoth = np.ma.zeros(X.shape, dtype=int); nnBoth.mask = True
         for p in range(1, n-1):
             currentPeaks = np.flatnonzero(localPeaks[:, p])
             for peak in currentPeaks:
-                if nnRight[peak, p] > 0 and nnLeft[nnRight[peak, p], p+1] == peak:
+                if not nnRight[peak, p] is np.ma.masked and nnLeft[nnRight[peak, p], p+1] == peak:
                     nnBoth[peak, p] = nnRight[peak, p]
         # link07.m line 198 and onward
         linkOutput = []
@@ -393,14 +393,14 @@ class Outliner(object):
 
         for p in range(n-1):
             # Get indices of links starting in current frame
-            for g in np.flatnonzero(nnRight[:, p]):
+            for g in np.flatnonzero(np.invert(nnRight.mask[:, p])):
                 tempLink = [[g, p, X[g, p]]]
-                while nnRight[tempLink[-1][0], tempLink[-1][1]] > 0:
+                while not nnRight[tempLink[-1][0], tempLink[-1][1]] is np.ma.masked:
                     new_row = [nnRight[tempLink[-1][0], tempLink[-1][1]],
                                tempLink[-1][1] + 1,
                                X[nnRight[tempLink[-1][0], tempLink[-1][1]], tempLink[-1][1]+1]]
                     tempLink.append(new_row)
-                    nnRight[tempLink[-2][0], tempLink[-2][1]] = 0
+                    nnRight[tempLink[-2][0], tempLink[-2][1]] = np.ma.masked
                 if len(tempLink) >= self.min_link_len:
                     linkOutput.append(tempLink)
 
