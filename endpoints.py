@@ -371,7 +371,7 @@ class Outliner(object):
                     for peak in currentPeaks:
                         F1[1, :] = f[peak] * 1e3
                         dF = np.dot(C1, F1) * 1e-6 #kHz/ms
-                        sF = np.maximum(40, 10*np.log10(np.sum(F1 * np.dot(B, F1), axis=0)) / (2 * deltaSize + 1) + 1) #dB, averaged
+                        sF = np.maximum(40, 10*np.log10(np.sum(F1 * np.dot(B, F1), axis=0) / (2 * deltaSize + 1) + 1)) #dB, averaged
                         gmmFeatures = np.vstack((X[peak, p] * np.ones(len(dF)), dF, sF))
                         LL = links_model.eval(gmmFeatures)
                         b = np.argmax(LL)
