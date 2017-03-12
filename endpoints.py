@@ -195,7 +195,7 @@ class Outliner(object):
 
             # Adjust time/frequency for each link
             for link in output_links: # for p=1:length(outputLinks),
-                link[:, 0] = (link[:, 0] + self.hpf_row - 1)/ self.fft_size * fs # Hz
+                link[:, 0] = (link[:, 0] + self.hpf_row)/ self.fft_size * fs # Hz
                 link[:, 1] = s_time_temp[link[:, 1].astype(int)] + i * self.chunk_size # sec
 
             # Get local/global features:
