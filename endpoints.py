@@ -10,11 +10,37 @@ from scipy.signal import ellipord, ellip, lfilter
 from scipy.fftpack import fft
 from scipy.io import loadmat
 
-GlobalFeatures = namedtuple('GlobalFeatures',
-                            ['startTime', 'stopTime', 'duration',
-                             'Fmin', 'Fmax', 'FPercentile', 'E',
-                             'FME', 'FMETime', 'dFmed', 'dEmed',
-                             'ddFmed', 'ddEmed', 'sFmed', 'sEmed'
+Link = namedtuple('Link', ['gfeat', 'lfeat'])
+
+GlobalFeatures = namedtuple('GlobalFeatures',   
+                            ['startTime',       # ms
+                             'stopTime',        # ms
+                             'duration',        # ms
+                             'Fmin',            # Hz
+                             'Fmax',            # Hz
+                             'FPercentile',     # Hz
+                             'E',               # dB
+                             'FME',             # Hz
+                             'FMETime',         # ms
+                             'dFmed',           # kHz / ms
+                             'dEmed',           # dB / ms
+                             'ddFmed',          # kHz / ms / ms
+                             'ddEmed',          # dB / ms / ms
+                             'sFmed',           # dB
+                             'sEmed'            # dB
+                            ])
+
+LocalFeatures = namedtuple('LocalFeatures',
+                            ['F',               # Hz
+                             'time',            # sec
+                             'E',               # dB
+                             'dF',              # kHz / ms
+                             'dE',              # dB / ms
+                             'ddF',             # kHz / ms / ms
+                             'ddE',             # dB / ms / ms
+                             'sF',              # dB
+                             'sE',              # dB
+                             'echo_energy'      # dB
                             ])
 
 class GaussianModel(object):
@@ -115,8 +141,8 @@ class Outliner(object):
         # Init spectrogram
         self.ham_window = self.window(self.frame_size)
         # Process each channel
-        for ch in range(num_ch):
-            links = self.extract_links(x[:, ch], fs)
+        links_per_channel = [self.extract_links(x[:, ch], fs) for ch in range(num_ch)]
+        import pdb; pdb.set_trace()
 
     def spectral_mean_subtraction(self, s):
         # Truncate at 5th percentile of non-zero values
@@ -135,8 +161,7 @@ class Outliner(object):
         # samples/frame, fractional
         frame_incr = fs / self.frame_rate
         step = fs * self.chunk_size
-        output_global = []
-        output_local = []
+        links = []
         # Find number of chunks to process, non-overlapping:
         #  Last bit in x used in last chunk
         num_chunks = max(1, np.int(x.shape[0]/fs/self.chunk_size))
@@ -200,11 +225,8 @@ class Outliner(object):
 
             # Get local/global features:
             # getCallEndpoints18.m line 245 and onward
-            oglobal, olocal = self.get_features(output_links)
-
-            output_global.extend(oglobal)
-            output_local.extend(olocal)
-        return output_global, output_local
+            links.extend(self.get_features(output_links))
+        return links
 
     def get_features(self, output_links):
         # Init linear regression variables:
@@ -222,8 +244,7 @@ class Outliner(object):
         B = A - np.eye(2*self.delta_size+1)
         B = np.dot(B.T, B)
 
-        output_local = []
-        output_global = []
+        links_list = []
         for link in output_links:
             # Get local features:
             F0 = link[:,0].T # Hz, ROW vector
@@ -270,13 +291,29 @@ class Outliner(object):
             dA0 = dA0/1e3   # dB/sec --> dB/ms
             ddA0 = ddA0/1e6 # dB/sec/sec --> dB/ms/ms
 
-            # Save local features -- Hz,sec,dB,kHz/ms,dB/ms,kHz/ms/ms,dB/ms/ms,dB,dB,echo dB:
-            local_features = [link[:, :3], dF0, dA0, ddF0, ddA0, sF0, sA0, link[:, 3]]
-            global_features = {}
+            # Save local features
+            # F(Hz), time(sec), E(dB),
+            # dF(kHz/ms), dE(dB/ms),
+            # ddF(kHz/ms/ms), ddE(dB/ms/ms)
+            # sF(dB), sE(dB), echo_energy(dB
+            local_features = {}
+            local_features['F'] = link[:, 0]            # Hz
+            local_features['time'] = link[:, 1]         # sec
+            local_features['E'] = link[:, 2]            # dB
+            local_features['dF'] = dF0                  # kHz / ms
+            local_features['dE'] = dA0                  # dB / ms
+            local_features['ddF'] = ddF0                # kHz / ms / ms
+            local_features['ddE'] = ddA0                # dB / ms / ms
+            local_features['sF'] = sF0                  # dB
+            local_features['sE'] = sA0                  # dB
+            local_features['echo_energy'] = link[:, 3]  # dB
+            
+            # Save global features
             # Start time(ms),End time(ms),Duration(ms),Fmin(Hz),
             # Fmax(Hz),F0 percentiles(Hz),FME(Hz),E(dB),FMETime(ms),
             # median dF0(kHz/ms),median dA0(dB/ms),median ddF0(kHz/ms/ms),
             # median ddA0(dB/ms/ms), median sF0(dB), median sA0(dB)
+            global_features = {}
             global_features['startTime'] = link[0, 1] * 1e3
             global_features['stopTime']  = link[-1, 1] * 1e3
             global_features['duration']  = global_features['stopTime'] - global_features['startTime']
@@ -295,10 +332,9 @@ class Outliner(object):
             global_features['sFmed'] = np.median(sF0)
             global_features['sEmed'] = np.median(sA0)
 
-            output_local.append(local_features)
-            output_global.append(GlobalFeatures(**global_features))
-
-        return output_local, output_global
+            links_list.append(Link(lfeat=LocalFeatures(**local_features),
+                                   gfeat=GlobalFeatures(**global_features)))
+        return links_list
 
     def find_links(self, X, f, t):
         m, n = X.shape
