@@ -107,7 +107,7 @@ class Outliner(object):
         self.frame_size = np.int(np.round(self.window_size / 1000 * fs))
 
         # Increase FFT size for interpolation
-        self.fft_size = 2**(np.ceil(np.log2(self.frame_size)) + 2)
+        self.fft_size = 2**(self.frame_size.bit_length() + 2)
         # spectrogram row, rows 1..hpfRow removed
         # from spectrogram for speed/memory
         self.hpf_row = np.int(np.round(self.HPFcutoff * 1e3 / fs * self.fft_size))
