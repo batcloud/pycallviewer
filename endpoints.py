@@ -157,9 +157,43 @@ class Outliner(object):
         s[s < s_med] = s_med
         return s - s_med
 
-    def extract_links(self, x, fs):
+    def compute_spectrogram(self, x, fs):
         # samples/frame, fractional
         frame_incr = fs / self.frame_rate
+
+        x1 = x - np.mean(x)
+        # Skip chunk if all zeros
+        if np.sum(np.abs(x1)) == 0:
+            return
+
+        # Number of frames in spectrogram
+        num_columns = np.int(np.ceil(len(x1) / frame_incr))
+        # Zero-pad to fit in m*l matrix
+        x2 = np.hstack((x1, np.zeros(self.frame_size)))
+        x3 = np.zeros((self.frame_size, num_columns))
+        for j in range(num_columns):
+            idx = int(round(j * frame_incr))
+            x3[:, j] = x2[idx:idx+self.frame_size] * self.ham_window
+        sxx = fft(x3, n=self.fft_size, axis=0)
+
+        # Remove low-freq rows, faster computation, less memory
+        sxx = sxx[self.hpf_row:int(self.fft_size/2)+1, :num_columns]
+        # Removes residual imag part
+        sxx = abs(sxx)**2
+        s_time_temp = (np.arange(num_columns) * frame_incr + self.frame_size / 2) / fs
+
+        if self.sms == 'sms':
+            # Apply spectral mean subtraction
+            sxx = self.spectral_mean_subtraction(sxx)
+        elif self.sms == 'mean':
+            # apply median scaling
+            sxx = self.median_scaling(sxx)
+
+        f = (np.arange(sxx.shape[0]) + self.hpf_row) * fs / self.fft_size * 1e-3
+        t = s_time_temp * 1e3
+        return sxx, f, t
+
+    def extract_links(self, x, fs):
         step = fs * self.chunk_size
         links = []
         # Find number of chunks to process, non-overlapping:
@@ -173,41 +207,8 @@ class Outliner(object):
             else:
                 x1 = x[i*step:]
 
-            x1 = x1 - np.mean(x1)
-            # Skip chunk if all zeros
-            if np.sum(np.abs(x1)) == 0:
-                continue
-            # Number of frames in spectrogram
-            num_columns = np.int(np.ceil(len(x1) / frame_incr))
-            # Zero-pad to fit in m*l matrix
-            x2 = np.hstack((x1, np.zeros(self.frame_size)))
-            x3 = np.zeros((self.frame_size, num_columns))
-            for j in range(num_columns):
-                idx = int(round(j * frame_incr))
-                x3[:, j] = x2[idx:idx+self.frame_size] * self.ham_window
-            sxx = fft(x3, n=self.fft_size, axis=0)
-
-            # Remove low-freq rows, faster computation, less memory
-            sxx = sxx[self.hpf_row:int(self.fft_size/2)+1, :num_columns]
-            # Removes residual imag part
-            sxx = abs(sxx)**2
-            s_time_temp = (np.arange(num_columns) * frame_incr
-                           + self.frame_size / 2) / fs
-
-            if self.sms == 'sms':
-                # Apply spectral mean subtraction
-                sxx = self.spectral_mean_subtraction(sxx)
-            elif self.sms == 'mean':
-                # apply median scaling
-                sxx = self.median_scaling(sxx)
-
-            #TODO refctor the name of these variables
-            xall_X = sxx
-            xall_f = (np.arange(sxx.shape[0]) + self.hpf_row)\
-                     * fs / self.fft_size * 1e-3
-            xall_t = s_time_temp * 1e3
-
-            output_links = self.find_links(xall_X, xall_f, xall_t)
+            sxx, f, t = self.compute_spectrogram(x1, fs)
+            output_links = self.find_links(sxx, f, t)
             # TODO[DEBUG]: verify result from this line to the return.
 
             # For each link, find spectral max in previous window
@@ -221,7 +222,7 @@ class Outliner(object):
             # Adjust time/frequency for each link
             for link in output_links: # for p=1:length(outputLinks),
                 link[:, 0] = (link[:, 0] + self.hpf_row)/ self.fft_size * fs # Hz
-                link[:, 1] = s_time_temp[link[:, 1].astype(int)] + i * self.chunk_size # sec
+                link[:, 1] = t[link[:, 1].astype(int)] * 1e-3 + i * self.chunk_size # sec
 
             # Get local/global features:
             # getCallEndpoints18.m line 245 and onward
