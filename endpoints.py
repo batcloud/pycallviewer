@@ -312,12 +312,10 @@ class Outliner(object):
         if len(f) != m or len(t) != n:
             raise Exception("ERROR: size mismatch between X and f and t.")
 
-        localPeaks = np.zeros(X.shape)
-        localPeaks[1:m-1, :] =  np.logical_and(
-                                    np.logical_and(X[1:m-1, :] >= X[:m-2, :],
-                                                   X[1:m-1, :] >  X[2:, :]),
-                                    X[1:m-1, :] >= self.trim_thresh
-                                 )
+        localPeaks = np.zeros(X.shape, dtype=bool)
+        localPeaks[1:-1,] = ((X[1:-1,] >= X[:-2,]) & (X[1:-1,] > X[2:,]) &
+                             (X[1:-1,] >= self.trim_thresh))
+
         # Init smoothness variables:
         deltaSize = 1;
         ## generic abscissa matrix, [sec,unity]
