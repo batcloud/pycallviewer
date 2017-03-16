@@ -239,51 +239,39 @@ class Outliner(object):
                 links.append(self.compute_link_features(link, B, C1))
         return links
 
+    def compute_derivative(self, X, B, C1, noisy=False):
+        n = X.shape[0]
+        dX = np.zeros(n)
+        sX = np.zeros(n)
+
+        X1 = np.hstack((X[[0]*self.delta_size], X, X[[-1]*self.delta_size]))
+        # TODO: find out to what correspond fft_res before trying this
+        if noisy:
+            X1 = X1 + (np.random.random(X1.shape) - 0.5) * self.fft_res
+
+        for i in range(n):
+            segment = X1[i:(i+2*self.delta_size+1)].T
+            dX[i] = np.dot(C1, segment)
+            sX[i] = np.dot(np.dot(segment.T, B), segment)
+
+        return dX, sX
+
     def compute_link_features(self, link, B, C1):
         # Get local features:
         F0 = link[:,0].T # Hz, ROW vector
         A0 = link[:,2].T # dB, ROW vector
 
-        # Pad endings
-        F1 = np.hstack((F0[[0]*self.delta_size], F0, F0[[-1]*self.delta_size]))
-        A1 = np.hstack((A0[[0]*self.delta_size], A0, A0[[-1]*self.delta_size]))
-
-        dF0 = np.zeros(F0.shape[0])  # Slope of F0
-        dA0 = np.zeros(A0.shape[0])  # Slope of A0
-        ddF0 = np.zeros(F0.shape[0]) # Concavity of F0
-        ddA0 = np.zeros(A0.shape[0]) # Concavity of A0
-        sF0 = np.zeros(F0.shape[0])  # Smoothness of F0
-        sA0 = np.zeros(A0.shape[0])  # Smoothness of A0
-
-        # Hz, dithered for non-zero smoothness
-        # TODO: find out to what correspond fft_res before trying this
-        # FNoisy = F1+(np.random.random(F1.shape)-.5) * self.fft_res;
-        FNoisy = F1 # Hz
-
-        for i in range(len(dF0)):
-            F = FNoisy[i:(i+2*self.delta_size+1)].T #  COLUMN vector
-            dF0[i] = np.dot(C1, F) #slope for linear regression
-            sF0[i] = np.dot(np.dot(F.T, B), F) # sum-of-squares error for linear regression
-            F = A1[i:(i+2*self.delta_size+1)].T # COLUMN vector
-            dA0[i] = np.dot(C1, F)
-            sA0[i] = np.dot(np.dot(F.T, B), F)
-
-        sF0 = np.maximum(40,10*np.log10(sF0/(2*self.delta_size+1)+1)) # linear regression error, dB (averaged)
-        sA0 = 10*np.log10(sA0/(2*self.delta_size+1)) # linear regression error, dB (averaged)
-
-        F1 = np.hstack([dF0[[0]*self.delta_size], dF0, dF0[[-1] * self.delta_size]]) # pad endings
-        A1 = np.hstack([dA0[[0]*self.delta_size], dA0, dA0[[-1] * self.delta_size]]) # pad endings
-
-        for i in range(len(dF0)):
-            F = F1[i:(i+2*self.delta_size+1)].T #  COLUMN vector
-            ddF0[i] = np.dot(C1, F) # concavity is slope of slope for linear regression
-            F = A1[i:(i+2*self.delta_size+1)].T # COLUMN vector
-            ddA0[i] = np.dot(C1, F)
+        dF0, sF0 = self.compute_derivative(F0, B, C1)
+        dA0, sA0 = self.compute_derivative(A0, B, C1)
+        ddF0, _  = self.compute_derivative(dF0, B, C1)
+        ddA0, _  = self.compute_derivative(dA0, B, C1)
 
         dF0 = dF0/1e6   # Hz/sec --> kHz/ms
         ddF0 = ddF0/1e9 # Hz/sec/sec --> kHz/ms/ms
         dA0 = dA0/1e3   # dB/sec --> dB/ms
         ddA0 = ddA0/1e6 # dB/sec/sec --> dB/ms/ms
+        sF0 = np.maximum(40,10*np.log10(sF0/(2*self.delta_size+1)+1)) # linear regression error, dB (averaged)
+        sA0 = 10*np.log10(sA0/(2*self.delta_size+1)) # linear regression error, dB (averaged)
 
         # Save local features
         # F(Hz), time(sec), E(dB),
