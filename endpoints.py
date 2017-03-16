@@ -219,10 +219,7 @@ class Outliner(object):
         for i, x1 in enumerate(np.split(x, range(step, num_chunks*step, step))):
             # Get spectrogram/link of chunk
             sxx, f, t = self.compute_spectrogram(x1, fs)
-            output_links = self.find_links(sxx, f, t)
-            # TODO[DEBUG]: verify result from this line to the return.
-
-            for j, link in enumerate(output_links):
+            for link in self.find_links(sxx, f, t):
                 # Find spectral max in previous window
                 for frame in link:
                     min_idx = max(0, frame[1] - round(self.window_prev_links * self.frame_rate))
@@ -401,7 +398,6 @@ class Outliner(object):
                 if not nnRight[peak, p] is np.ma.masked and nnLeft[nnRight[peak, p], p+1] == peak:
                     nnBoth[peak, p] = nnRight[peak, p]
         # link07.m line 198 and onward
-        linkOutput = []
         nnRight = nnBoth
 
         for p in range(n-1):
@@ -415,9 +411,7 @@ class Outliner(object):
                     tempLink.append(new_row)
                     nnRight[tempLink[-2][0], tempLink[-2][1]] = np.ma.masked
                 if len(tempLink) >= self.min_link_len:
-                    linkOutput.append(tempLink)
-
-        return linkOutput
+                    yield tempLink
 
 if __name__ == "__main__":
     import wavfile
