@@ -200,13 +200,8 @@ class Outliner(object):
         #  Last bit in x used in last chunk
         num_chunks = max(1, np.int(x.shape[0]/fs/self.chunk_size))
         # Process each chunk
-        for i in range(num_chunks):
+        for i, x1 in enumerate(np.split(x, range(step, num_chunks*step, step))):
             # Get spectrogram/link of chunk
-            if i < num_chunks - 1:
-                x1 = x[i*step:(i+1)*step]
-            else:
-                x1 = x[i*step:]
-
             sxx, f, t = self.compute_spectrogram(x1, fs)
             output_links = self.find_links(sxx, f, t)
             # TODO[DEBUG]: verify result from this line to the return.
