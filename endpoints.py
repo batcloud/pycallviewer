@@ -365,11 +365,9 @@ class Outliner(object):
 
                 # left and right link
                 elif leftPeaks.size > 0 and rightPeaks.size > 0:
-                    aaa, bbb = np.meshgrid(range(leftPeaks.size),
-                                           range(rightPeaks.size))
-                    F1 = np.vstack((f[leftPeaks[aaa.flatten()]],
-                                    np.ones(aaa.size),
-                                    f[rightPeaks[bbb.flatten()]])) * 1e3
+                    F1 = np.vstack((f[np.tile(leftPeaks, rightPeaks.size)],
+                                    np.ones(leftPeaks.size * rightPeaks.size),
+                                    f[np.repeat(rightPeaks, leftPeaks.size)])) * 1e3
                     for peak in currentPeaks:
                         F1[1, :] = f[peak] * 1e3
                         dF = np.dot(C1, F1) * 1e-6 #kHz/ms
