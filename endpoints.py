@@ -220,14 +220,7 @@ class Outliner(object):
             # Get spectrogram/link of chunk
             sxx, f, t = self.compute_spectrogram(x1, fs)
             for link in self.find_links(sxx, f, t):
-                # Find spectral max in previous window
-                for frame in link:
-                    min_idx = max(0, frame[1] - round(self.window_prev_links * self.frame_rate))
-                    frame.append(sxx[frame[0], range(int(min_idx), int(frame[1]+1))].max())
-
-                # [FFT bin, frame, dB, mask dB]
                 link = np.array(link)
-
                 # Adjust time/frequency for each link
                 link[:, 0] = (link[:, 0] + self.hpf_row)/ self.fft_size * fs # Hz
                 link[:, 1] = t[link[:, 1].astype(int)] * 1e-3 + i * self.chunk_size # sec
@@ -400,18 +393,26 @@ class Outliner(object):
         # link07.m line 198 and onward
         nnRight = nnBoth
 
+        frame_diff = int(round(self.window_prev_links * self.frame_rate))
         for p in range(n-1):
             # Get indices of links starting in current frame
             for g in np.flatnonzero(np.invert(nnRight.mask[:, p])):
-                tempLink = [[g, p, X[g, p]]]
-                while not nnRight[tempLink[-1][0], tempLink[-1][1]] is np.ma.masked:
-                    new_row = [nnRight[tempLink[-1][0], tempLink[-1][1]],
-                               tempLink[-1][1] + 1,
-                               X[nnRight[tempLink[-1][0], tempLink[-1][1]], tempLink[-1][1]+1]]
-                    tempLink.append(new_row)
-                    nnRight[tempLink[-2][0], tempLink[-2][1]] = np.ma.masked
-                if len(tempLink) >= self.min_link_len:
-                    yield tempLink
+                # [FFT bin, frame, dB, mask dB]
+                link = [[g, p, X[g, p], None]]
+                while not nnRight[link[-1][0], link[-1][1]] is np.ma.masked:
+                    frame = [nnRight[link[-1][0], link[-1][1]],
+                             link[-1][1] + 1,
+                             X[nnRight[link[-1][0], link[-1][1]], link[-1][1]+1],
+                             None]
+                    link.append(frame)
+                    nnRight[link[-2][0], link[-2][1]] = np.ma.masked
+                if len(link) >= self.min_link_len:
+                    # Find spectral max in previous window
+                    for frame in link:
+                        start = max(0, frame[1] - frame_diff)
+                        stop  = frame[1] + 1
+                        frame[3] = np.max(X[frame[0], start:stop])
+                    yield link
 
 if __name__ == "__main__":
     import wavfile
