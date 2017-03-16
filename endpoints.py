@@ -342,12 +342,12 @@ class Outliner(object):
             currentPeaks = rightPeaks
             rightPeaks = np.flatnonzero(localPeaks[:, p+1])
 
-            if len(currentPeaks) > 0:
+            if currentPeaks.size > 0:
                 # right link only
-                if len(leftPeaks) == 0 and len(rightPeaks) > 0:
+                if leftPeaks.size == 0 and rightPeaks.size > 0:
                     neighborPeaks = rightPeaks
                     for peak in currentPeaks:
-                        E = np.dot(X[peak, p], np.ones((1, len(neighborPeaks))))
+                        E = X[peak, p] * np.ones(neighborPeaks.size)
                         dF = (f[peak] - f[neighborPeaks]) / (t[p] - t[p+1])
                         LL = links_model_lr.eval(np.vstack((E, dF)))
                         b = np.argmax(LL)
@@ -355,10 +355,10 @@ class Outliner(object):
                             nnRight[peak, p] = neighborPeaks[b]
 
                 # left link only
-                elif len(leftPeaks) > 0 and len(rightPeaks) == 0:
+                elif leftPeaks.size > 0 and rightPeaks.size == 0:
                     neighborPeaks = leftPeaks
                     for peak in currentPeaks:
-                        E = np.dot(X[peak, p], np.ones((1, len(neighborPeaks))))
+                        E = X[peak, p] * np.ones(neighborPeaks.size)
                         dF = (f[peak] - f[neighborPeaks]) / (t[p] - t[p-1])
                         LL = links_model_lr.eval(np.vstack((E, dF)))
                         b = np.argmax(LL)
@@ -366,22 +366,22 @@ class Outliner(object):
                             nnLeft[peak, p] = neighborPeaks[b]
 
                 # left and right link
-                elif len(leftPeaks) > 0 and len(rightPeaks) > 0:
-                    aaa, bbb = np.meshgrid(range(len(leftPeaks)),
-                                           range(len(rightPeaks)))
+                elif leftPeaks.size > 0 and rightPeaks.size > 0:
+                    aaa, bbb = np.meshgrid(range(leftPeaks.size),
+                                           range(rightPeaks.size))
                     F1 = np.vstack((f[leftPeaks[aaa.flatten()]],
-                                    np.ones(aaa.shape[0] * aaa.shape[1]),
+                                    np.ones(aaa.size),
                                     f[rightPeaks[bbb.flatten()]])) * 1e3
                     for peak in currentPeaks:
                         F1[1, :] = f[peak] * 1e3
                         dF = np.dot(C1, F1) * 1e-6 #kHz/ms
                         sF = np.maximum(40, 10*np.log10(np.sum(F1 * np.dot(B, F1), axis=0) / (2 * deltaSize + 1) + 1)) #dB, averaged
-                        gmmFeatures = np.vstack((X[peak, p] * np.ones(len(dF)), dF, sF))
-                        LL = links_model.eval(gmmFeatures)
+                        E  = X[peak, p] * np.ones(dF.size)
+                        LL = links_model.eval(np.vstack((E, dF, sF)))
                         b = np.argmax(LL)
                         if LL[b] > self.links_thresh:
-                            nnLeft[peak, p] = leftPeaks[b % len(leftPeaks)]
-                            nnRight[peak, p] = rightPeaks[int(b / len(leftPeaks))]
+                            nnLeft[peak, p] = leftPeaks[b % leftPeaks.size]
+                            nnRight[peak, p] = rightPeaks[b // leftPeaks.size]
 
         # Find reciprocal nearest neighbors, link together:
         nnBoth = np.ma.zeros(X.shape, dtype=int); nnBoth.mask = True
