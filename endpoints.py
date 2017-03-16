@@ -330,7 +330,7 @@ class Outliner(object):
         ## generic abscissa matrix, [sec,unity]
         z = np.ones((2*deltaSize + 1, 2))
         z[:, 0] = np.arange(-deltaSize, deltaSize+1) * (t[1] - t[0]) * 1e-3
-        C = np.dot(np.linalg.inv(np.dot(z.T, z)), z.T);
+        C = np.dot(np.linalg.inv(np.dot(z.T, z)), z.T)
         C1 = C[0, :]
         A = np.dot(z, C)
         B = np.dot((A - np.eye(2*deltaSize + 1)).T,
