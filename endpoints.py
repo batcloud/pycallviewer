@@ -194,37 +194,8 @@ class Outliner(object):
         return sxx, f, t
 
     def extract_links(self, x, fs):
-        step = fs * self.chunk_size
         links = []
-        # Find number of chunks to process, non-overlapping:
-        #  Last bit in x used in last chunk
-        num_chunks = max(1, np.int(x.shape[0]/fs/self.chunk_size))
-        # Process each chunk
-        for i, x1 in enumerate(np.split(x, range(step, num_chunks*step, step))):
-            # Get spectrogram/link of chunk
-            sxx, f, t = self.compute_spectrogram(x1, fs)
-            output_links = self.find_links(sxx, f, t)
-            # TODO[DEBUG]: verify result from this line to the return.
 
-            # For each link, find spectral max in previous window
-            for j, link in enumerate(output_links):
-                # t = np.hstack((link, np.zeros((len(link), 1)))) # [FFT bin,frame,dB,mask dB]
-                for frame in link:
-                    min_idx = max(0, frame[1] - round(self.window_prev_links * self.frame_rate))
-                    frame.append(sxx[frame[0], range(int(min_idx), int(frame[1]+1))].max())
-                output_links[j] = np.array(link)
-
-            # Adjust time/frequency for each link
-            for link in output_links: # for p=1:length(outputLinks),
-                link[:, 0] = (link[:, 0] + self.hpf_row)/ self.fft_size * fs # Hz
-                link[:, 1] = t[link[:, 1].astype(int)] * 1e-3 + i * self.chunk_size # sec
-
-            # Get local/global features:
-            # getCallEndpoints18.m line 245 and onward
-            links.extend(self.get_features(output_links))
-        return links
-
-    def get_features(self, output_links):
         # Init linear regression variables:
         # generic abscissa matrix, [sec,unity]
         z = np.ones((2*self.delta_size + 1, 2))
@@ -240,97 +211,123 @@ class Outliner(object):
         B = A - np.eye(2*self.delta_size+1)
         B = np.dot(B.T, B)
 
-        links_list = []
-        for link in output_links:
-            # Get local features:
-            F0 = link[:,0].T # Hz, ROW vector
-            A0 = link[:,2].T # dB, ROW vector
+        # Find number of chunks to process, non-overlapping:
+        #  Last bit in x used in last chunk
+        step = fs * self.chunk_size
+        num_chunks = max(1, np.int(x.shape[0]/fs/self.chunk_size))
+        # Process each chunk
+        for i, x1 in enumerate(np.split(x, range(step, num_chunks*step, step))):
+            # Get spectrogram/link of chunk
+            sxx, f, t = self.compute_spectrogram(x1, fs)
+            output_links = self.find_links(sxx, f, t)
+            # TODO[DEBUG]: verify result from this line to the return.
 
-            # Pad endings
-            F1 = np.hstack((F0[[0]*self.delta_size], F0, F0[[-1]*self.delta_size]))
-            A1 = np.hstack((A0[[0]*self.delta_size], A0, A0[[-1]*self.delta_size]))
+            for j, link in enumerate(output_links):
+                # Find spectral max in previous window
+                for frame in link:
+                    min_idx = max(0, frame[1] - round(self.window_prev_links * self.frame_rate))
+                    frame.append(sxx[frame[0], range(int(min_idx), int(frame[1]+1))].max())
 
-            dF0 = np.zeros(F0.shape[0])  # Slope of F0
-            dA0 = np.zeros(A0.shape[0])  # Slope of A0
-            ddF0 = np.zeros(F0.shape[0]) # Concavity of F0
-            ddA0 = np.zeros(A0.shape[0]) # Concavity of A0
-            sF0 = np.zeros(F0.shape[0])  # Smoothness of F0
-            sA0 = np.zeros(A0.shape[0])  # Smoothness of A0
+                # [FFT bin, frame, dB, mask dB]
+                link = np.array(link)
 
-            # Hz, dithered for non-zero smoothness
-            # TODO: find out to what correspond fft_res before trying this
-            # FNoisy = F1+(np.random.random(F1.shape)-.5) * self.fft_res;
-            FNoisy = F1 # Hz
+                # Adjust time/frequency for each link
+                link[:, 0] = (link[:, 0] + self.hpf_row)/ self.fft_size * fs # Hz
+                link[:, 1] = t[link[:, 1].astype(int)] * 1e-3 + i * self.chunk_size # sec
 
-            for i in range(len(dF0)):
-                F = FNoisy[i:(i+2*self.delta_size+1)].T #  COLUMN vector
-                dF0[i] = np.dot(C1, F) #slope for linear regression
-                sF0[i] = np.dot(np.dot(F.T, B), F) # sum-of-squares error for linear regression
-                F = A1[i:(i+2*self.delta_size+1)].T # COLUMN vector
-                dA0[i] = np.dot(C1, F)
-                sA0[i] = np.dot(np.dot(F.T, B), F)
+                # Compute local/global features
+                links.append(self.compute_link_features(link, B, C1))
+        return links
 
-            sF0 = np.maximum(40,10*np.log10(sF0/(2*self.delta_size+1)+1)) # linear regression error, dB (averaged)
-            sA0 = 10*np.log10(sA0/(2*self.delta_size+1)) # linear regression error, dB (averaged)
+    def compute_link_features(self, link, B, C1):
+        # Get local features:
+        F0 = link[:,0].T # Hz, ROW vector
+        A0 = link[:,2].T # dB, ROW vector
 
-            F1 = np.hstack([dF0[[0]*self.delta_size], dF0, dF0[[-1] * self.delta_size]]) # pad endings
-            A1 = np.hstack([dA0[[0]*self.delta_size], dA0, dA0[[-1] * self.delta_size]]) # pad endings
+        # Pad endings
+        F1 = np.hstack((F0[[0]*self.delta_size], F0, F0[[-1]*self.delta_size]))
+        A1 = np.hstack((A0[[0]*self.delta_size], A0, A0[[-1]*self.delta_size]))
 
-            for i in range(len(dF0)):
-                F = F1[i:(i+2*self.delta_size+1)].T #  COLUMN vector
-                ddF0[i] = np.dot(C1, F) # concavity is slope of slope for linear regression
-                F = A1[i:(i+2*self.delta_size+1)].T # COLUMN vector
-                ddA0[i] = np.dot(C1, F)
+        dF0 = np.zeros(F0.shape[0])  # Slope of F0
+        dA0 = np.zeros(A0.shape[0])  # Slope of A0
+        ddF0 = np.zeros(F0.shape[0]) # Concavity of F0
+        ddA0 = np.zeros(A0.shape[0]) # Concavity of A0
+        sF0 = np.zeros(F0.shape[0])  # Smoothness of F0
+        sA0 = np.zeros(A0.shape[0])  # Smoothness of A0
 
-            dF0 = dF0/1e6   # Hz/sec --> kHz/ms
-            ddF0 = ddF0/1e9 # Hz/sec/sec --> kHz/ms/ms
-            dA0 = dA0/1e3   # dB/sec --> dB/ms
-            ddA0 = ddA0/1e6 # dB/sec/sec --> dB/ms/ms
+        # Hz, dithered for non-zero smoothness
+        # TODO: find out to what correspond fft_res before trying this
+        # FNoisy = F1+(np.random.random(F1.shape)-.5) * self.fft_res;
+        FNoisy = F1 # Hz
 
-            # Save local features
-            # F(Hz), time(sec), E(dB),
-            # dF(kHz/ms), dE(dB/ms),
-            # ddF(kHz/ms/ms), ddE(dB/ms/ms)
-            # sF(dB), sE(dB), echo_energy(dB
-            local_features = {}
-            local_features['F'] = link[:, 0]            # Hz
-            local_features['time'] = link[:, 1]         # sec
-            local_features['E'] = link[:, 2]            # dB
-            local_features['dF'] = dF0                  # kHz / ms
-            local_features['dE'] = dA0                  # dB / ms
-            local_features['ddF'] = ddF0                # kHz / ms / ms
-            local_features['ddE'] = ddA0                # dB / ms / ms
-            local_features['sF'] = sF0                  # dB
-            local_features['sE'] = sA0                  # dB
-            local_features['echo_energy'] = link[:, 3]  # dB
-            
-            # Save global features
-            # Start time(ms),End time(ms),Duration(ms),Fmin(Hz),
-            # Fmax(Hz),F0 percentiles(Hz),FME(Hz),E(dB),FMETime(ms),
-            # median dF0(kHz/ms),median dA0(dB/ms),median ddF0(kHz/ms/ms),
-            # median ddA0(dB/ms/ms), median sF0(dB), median sA0(dB)
-            global_features = {}
-            global_features['startTime'] = link[0, 1] * 1e3
-            global_features['stopTime']  = link[-1, 1] * 1e3
-            global_features['duration']  = global_features['stopTime'] - global_features['startTime']
-            global_features['Fmin'] = np.min(F0)
-            global_features['Fmax'] = np.max(F0)
-            global_features['FPercentile'] = np.percentile(F0, range(10, 100, 10), interpolation='nearest')
+        for i in range(len(dF0)):
+            F = FNoisy[i:(i+2*self.delta_size+1)].T #  COLUMN vector
+            dF0[i] = np.dot(C1, F) #slope for linear regression
+            sF0[i] = np.dot(np.dot(F.T, B), F) # sum-of-squares error for linear regression
+            F = A1[i:(i+2*self.delta_size+1)].T # COLUMN vector
+            dA0[i] = np.dot(C1, F)
+            sA0[i] = np.dot(np.dot(F.T, B), F)
 
-            a0_max_idx = np.argmax(A0)
-            global_features['E'] = A0[a0_max_idx]
-            global_features['FME'] = F0[a0_max_idx]
-            global_features['FMETime'] = (link[a0_max_idx, 1] - link[0, 1]) * 1e3
-            global_features['dFmed'] = np.median(dF0)
-            global_features['dEmed'] = np.median(dA0)
-            global_features['ddFmed'] = np.median(ddF0)
-            global_features['ddEmed'] = np.median(ddA0)
-            global_features['sFmed'] = np.median(sF0)
-            global_features['sEmed'] = np.median(sA0)
+        sF0 = np.maximum(40,10*np.log10(sF0/(2*self.delta_size+1)+1)) # linear regression error, dB (averaged)
+        sA0 = 10*np.log10(sA0/(2*self.delta_size+1)) # linear regression error, dB (averaged)
 
-            links_list.append(Link(lfeat=LocalFeatures(**local_features),
-                                   gfeat=GlobalFeatures(**global_features)))
-        return links_list
+        F1 = np.hstack([dF0[[0]*self.delta_size], dF0, dF0[[-1] * self.delta_size]]) # pad endings
+        A1 = np.hstack([dA0[[0]*self.delta_size], dA0, dA0[[-1] * self.delta_size]]) # pad endings
+
+        for i in range(len(dF0)):
+            F = F1[i:(i+2*self.delta_size+1)].T #  COLUMN vector
+            ddF0[i] = np.dot(C1, F) # concavity is slope of slope for linear regression
+            F = A1[i:(i+2*self.delta_size+1)].T # COLUMN vector
+            ddA0[i] = np.dot(C1, F)
+
+        dF0 = dF0/1e6   # Hz/sec --> kHz/ms
+        ddF0 = ddF0/1e9 # Hz/sec/sec --> kHz/ms/ms
+        dA0 = dA0/1e3   # dB/sec --> dB/ms
+        ddA0 = ddA0/1e6 # dB/sec/sec --> dB/ms/ms
+
+        # Save local features
+        # F(Hz), time(sec), E(dB),
+        # dF(kHz/ms), dE(dB/ms),
+        # ddF(kHz/ms/ms), ddE(dB/ms/ms)
+        # sF(dB), sE(dB), echo_energy(dB
+        local_features = {}
+        local_features['F'] = link[:, 0]            # Hz
+        local_features['time'] = link[:, 1]         # sec
+        local_features['E'] = link[:, 2]            # dB
+        local_features['dF'] = dF0                  # kHz / ms
+        local_features['dE'] = dA0                  # dB / ms
+        local_features['ddF'] = ddF0                # kHz / ms / ms
+        local_features['ddE'] = ddA0                # dB / ms / ms
+        local_features['sF'] = sF0                  # dB
+        local_features['sE'] = sA0                  # dB
+        local_features['echo_energy'] = link[:, 3]  # dB
+
+        # Save global features
+        # Start time(ms),End time(ms),Duration(ms),Fmin(Hz),
+        # Fmax(Hz),F0 percentiles(Hz),FME(Hz),E(dB),FMETime(ms),
+        # median dF0(kHz/ms),median dA0(dB/ms),median ddF0(kHz/ms/ms),
+        # median ddA0(dB/ms/ms), median sF0(dB), median sA0(dB)
+        global_features = {}
+        global_features['startTime'] = link[0, 1] * 1e3
+        global_features['stopTime']  = link[-1, 1] * 1e3
+        global_features['duration']  = global_features['stopTime'] - global_features['startTime']
+        global_features['Fmin'] = np.min(F0)
+        global_features['Fmax'] = np.max(F0)
+        global_features['FPercentile'] = np.percentile(F0, range(10, 100, 10), interpolation='nearest')
+
+        a0_max_idx = np.argmax(A0)
+        global_features['E'] = A0[a0_max_idx]
+        global_features['FME'] = F0[a0_max_idx]
+        global_features['FMETime'] = (link[a0_max_idx, 1] - link[0, 1]) * 1e3
+        global_features['dFmed'] = np.median(dF0)
+        global_features['dEmed'] = np.median(dA0)
+        global_features['ddFmed'] = np.median(ddF0)
+        global_features['ddEmed'] = np.median(ddA0)
+        global_features['sFmed'] = np.median(sF0)
+        global_features['sEmed'] = np.median(sA0)
+
+        return Link(lfeat=LocalFeatures(**local_features),
+                    gfeat=GlobalFeatures(**global_features))
 
     def find_links(self, X, f, t):
         m, n = X.shape
