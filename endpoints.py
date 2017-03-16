@@ -69,7 +69,7 @@ class GaussianModel(object):
         d, N = x.shape
         M = self.mu.shape[1]
         if M == 1:
-            xx = x - self.mu[:d, np.zeros(N, dtype=np.int)]
+            xx = x - self.mu
             y = self.prefactor - np.sum(np.dot(self.sigInv, xx) * xx, axis=0)/2
         else:
             raise Exception("Feature yet supported")
