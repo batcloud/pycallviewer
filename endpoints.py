@@ -142,7 +142,8 @@ class Outliner(object):
         self.ham_window = self.window(self.frame_size)
         # Process each channel
         links_per_channel = [self.extract_links(x[:, ch], fs) for ch in range(num_ch)]
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
+        self.filter_echo(links_per_channel[0])
 
     def spectral_mean_subtraction(self, s):
         # Truncate at 5th percentile of non-zero values
@@ -409,6 +410,53 @@ class Outliner(object):
                         stop  = frame[1] + 1
                         frame[3] = np.max(X[frame[0], start:stop])
                     yield link
+
+    def filter_echo(self, links):
+        num_links = len(links)
+        cost_terms = np.zeros((5, num_links))
+        for i, link in enumerate(links):
+            sF = link.lfeat.sF
+            # Adjust sF, truncate values at 40 so that sF 
+            # appears more Gaussian in distribution:
+            sF[sF < 40] = 40
+
+            cost_terms[0, i] = (len(link.lfeat) - 1) / self.frame_rate
+            cost_terms[1, i] = np.max(link.lfeat.E)
+            cost_terms[2, i] = np.median(sF)
+            cost_terms[3, i] = np.median(link.lfeat.echo_energy - sF)
+            cost_terms[4, i] = np.median(link.lfeat.dF)
+         
+        # Compute likelihoods:
+        # LLcall = echo_model.eval(cost_terms)
+        # LLecho = call_model.eval(cost_terms)
+        # == 1: link is a call (fundamental or harmonic);
+        # == 0 : not a call (echo or harmonic)
+        # is_call = LLcall >= (LLecho + self.baseline_thresh)
+
+        endpoints = np.zeros((num_links, 2))
+        for i, link in enumerate(links):
+            endpoints[i, 0] = link.gfeat.startTime
+            endpoints[i, 1] = link.gfeat.stopTime
+
+        for i, link in enumerate(links):
+            h = endpoints[i]
+            
+            overlap_array  = (endpoints[:, 0] <= h[0]) & (endpoints[:, 1] >= h[0])
+            overlap_array |= (endpoints[:, 0] >= h[0]) & (endpoints[:, 1] <= h[1])
+            overlap_array |= (endpoints[:, 0] <= h[1]) & (endpoints[:, 1] >= h[1])
+            overlap_array[i] = 0
+            overlapping_calls = np.flatnonzero(overlap_array)
+
+            if overlapping_calls.size > 0:
+                # Determine harmonic ratio mean and variance 
+                # w/ all overlapping links:
+                ratioMean = np.zeros(overlapping_calls.size)
+                ratioVar = np.zeros(overlapping_calls.size)
+                ratioN = np.zeros(overlapping_calls.size)
+                overlapPercentage = np.zeros(overlapping_calls.size)
+                FratioOverlap = np.zeros(overlapping_calls.size)
+                FratioCurrent = np.zeros(overlapping_calls.size)
+                ratioSE = np.zeros(overlapping_calls.size)
 
 if __name__ == "__main__":
     import wavfile
