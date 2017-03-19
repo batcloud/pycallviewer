@@ -446,8 +446,8 @@ class Outliner(object):
 
         endpoints = np.zeros((num_links, 2))
         for i, link in enumerate(links):
-            endpoints[i, 0] = link.gfeat.startTime
-            endpoints[i, 1] = link.gfeat.stopTime
+            endpoints[i, 0] = link.lfeat.time[0]
+            endpoints[i, 1] = link.lfeat.time[-1]
 
         harmonic_list = []
         for i, link in enumerate(links):
@@ -482,17 +482,17 @@ class Outliner(object):
                     FcurrentStart = max(0, int(round((hOverlap[0]-h[0])*self.frame_rate)))
                     FcurrentEnd = min(Fcurrent.size, Fcurrent.size+int(round((hOverlap[1]-h[1])*self.frame_rate)))
                     FoverlapStart = max(0, int(round((h[0]-hOverlap[0])*self.frame_rate)))
-                    FoverlapEnd = min(Foverlap.size, Foverlap.size+int(round((h[1]-hOverlap[1]))*self.frame_rate))
+                    FoverlapEnd = min(Foverlap.size, Foverlap.size+int(round((h[1]-hOverlap[1])*self.frame_rate)))
                     Fratio = Foverlap[FoverlapStart:FoverlapEnd]/Fcurrent[FcurrentStart:FcurrentEnd]
 
                     if Fratio.size > 1:
                         # more robust to outliers due to untrimmed endpoints
                         ratioMean[j] = np.median(Fratio)
                         if ratioMean[j] > 1 :
-                            fraction = Fraction.from_float(ratioMean)
+                            fraction = Fraction.from_float(ratioMean[j])
                             ratioVar[j] = np.var(Fratio)
                         else:
-                            fraction = Fraction.from_float(1./ratioMean)
+                            fraction = Fraction.from_float(1./ratioMean[j])
                             ratioVar[j] = np.var(1./Fratio)
                         
                         FratioOverlap[j] = fraction.numerator
