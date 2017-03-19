@@ -2,6 +2,7 @@ from __future__ import division
 
 import numpy as np
 
+from fractions import Fraction
 from collections import namedtuple
 from operator import itemgetter
 from itertools import groupby, zip_longest
@@ -11,6 +12,16 @@ from scipy.fftpack import fft
 from scipy.io import loadmat
 
 Link = namedtuple('Link', ['gfeat', 'lfeat'])
+
+HarmonicStats = namedtuple('HarmonicStats',
+                            ['ratioMean',
+                             'ratioVar',
+                             'ratioN',
+                             'overlapPercentage',
+                             'FratioOverlap',
+                             'FratioCurrent',
+                             'ratioSE'
+                            ])
 
 GlobalFeatures = namedtuple('GlobalFeatures',   
                             ['startTime',       # ms
@@ -438,6 +449,7 @@ class Outliner(object):
             endpoints[i, 0] = link.gfeat.startTime
             endpoints[i, 1] = link.gfeat.stopTime
 
+        harmonic_list = []
         for i, link in enumerate(links):
             h = endpoints[i]
             
@@ -447,6 +459,7 @@ class Outliner(object):
             overlap_array[i] = 0
             overlapping_calls = np.flatnonzero(overlap_array)
 
+            link_hstats = {}
             if overlapping_calls.size > 0:
                 # Determine harmonic ratio mean and variance 
                 # w/ all overlapping links:
@@ -457,6 +470,68 @@ class Outliner(object):
                 FratioOverlap = np.zeros(overlapping_calls.size)
                 FratioCurrent = np.zeros(overlapping_calls.size)
                 ratioSE = np.zeros(overlapping_calls.size)
+
+                Fcurrent = link.lfeat.F
+                for j, call in enumerate(overlapping_calls):
+                    hOverlap = endpoints[call]
+
+                    # Get frequencies of overlapping link
+                    Foverlap = links[call].lfeat.F
+
+                    # Compute ratio of overlapping parts
+                    FcurrentStart = max(0, int(round((hOverlap[0]-h[0])*self.frame_rate)))
+                    FcurrentEnd = min(Fcurrent.size, Fcurrent.size+int(round((hOverlap[1]-h[1])*self.frame_rate)))
+                    FoverlapStart = max(0, int(round((h[0]-hOverlap[0])*self.frame_rate)))
+                    FoverlapEnd = min(Foverlap.size, Foverlap.size+int(round((h[1]-hOverlap[1]))*self.frame_rate))
+                    Fratio = Foverlap[FoverlapStart:FoverlapEnd]/Fcurrent[FcurrentStart:FcurrentEnd]
+
+                    if Fratio.size > 1:
+                        # more robust to outliers due to untrimmed endpoints
+                        ratioMean[j] = np.median(Fratio)
+                        if ratioMean[j] > 1 :
+                            fraction = Fraction.from_float(ratioMean)
+                            ratioVar[j] = np.var(Fratio)
+                        else:
+                            fraction = Fraction.from_float(1./ratioMean)
+                            ratioVar[j] = np.var(1./Fratio)
+                        
+                        FratioOverlap[j] = fraction.numerator
+                        FratioCurrent[j] = fraction.denominator                            
+                        ratioN[j] = Fratio.size
+                        overlapPercentage[j] = Fratio.size / min(Fcurrent.size, Foverlap.size) * 100
+                        ratioSE[j] = ratioVar[j] / Fratio.size
+                    else:
+                        ratioMean[j] = np.median(Fratio)
+                        ratioVar[j] = 10
+                        ratioN[j] = Fratio.size
+                        overlapPercentage[j] = 0
+                        FratioOverlap[j] = -1
+                        FratioCurrent[j] = -1
+                        ratioSE[j] = 10
+                
+                link_hstats['ratioMean'] = ratioMean
+                link_hstats['ratioVar'] = ratioVar
+                link_hstats['ratioN'] = ratioN
+                link_hstats['overlapPercentage'] = overlapPercentage
+                link_hstats['FratioOverlap'] = FratioOverlap
+                link_hstats['FratioCurrent'] = FratioCurrent
+                link_hstats['ratioSE'] = ratioSE
+
+            else:
+                link_hstats['ratioMean'] = 1
+                link_hstats['ratioVar'] = 0
+                link_hstats['ratioN'] = 0
+                link_hstats['overlapPercentage'] = 0;
+                link_hstats['FratioOverlap'] = []
+                link_hstats['FratioCurrent'] = []
+                link_hstats['ratioSE'] = []
+
+            harmonic_list.append(HarmonicStats(**link_hstats))
+
+        # Assign harmonic numbers and indeces of minimum harmonic
+        # getCallEnpoints line 368 - 411
+        import pdb; pdb.set_trace()
+
 
 if __name__ == "__main__":
     import wavfile
