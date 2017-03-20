@@ -1,6 +1,7 @@
 from __future__ import division
 
 import numpy as np
+import h5py
 
 from fractions import Fraction
 from collections import namedtuple
@@ -9,7 +10,7 @@ from itertools import groupby, zip_longest
 
 from scipy.signal import ellipord, ellip, lfilter
 from scipy.fftpack import fft
-from scipy.io import loadmat
+from scipy.stats import multivariate_normal
 
 Link = namedtuple('Link', ['gfeat', 'lfeat'])
 
@@ -54,38 +55,13 @@ LocalFeatures = namedtuple('LocalFeatures',
                              'echo_energy'      # dB
                             ])
 
-class GaussianModel(object):
-    def __init__(self, name, filename=None, LR=False):
-        self.model_name = name
-        if filename is not None:
-            content = loadmat(filename)
-            model = content[self.model_name]
-            self.mu = model['mu'][0, 0]
-            self.sig = model['sig'][0, 0]
-            self.sigInv = model['sigInv'][0, 0]
-            self.w = model['w'][0, 0]
-            self.prefactor = model['prefactor'][0, 0]
-            if LR:
-                self.mu = self.mu[:2]
-                self.sig = self.sig[:2, :2]
-                self.sigInv = np.linalg.inv(self.sig)
-                self.prefactor = -1/2 * np.log(np.linalg.det(self.sig)) + np.log(self.w)
-            else:
-                self.mu = self.mu[[0,1,3]]
-                self.sig = self.sig[[[0],[1],[3]], [0,1,3]]
-                self.sigInv = np.linalg.inv(self.sig)
-                self.prefactor = -1/2 * np.log(np.linalg.det(self.sig)) + np.log(self.w)
 
-    def eval(self, x):
-        d, N = x.shape
-        M = self.mu.shape[1]
-        if M == 1:
-            xx = x - self.mu
-            y = self.prefactor - np.sum(np.dot(self.sigInv, xx) * xx, axis=0)/2
-        else:
-            raise Exception("Feature yet supported")
-            pass
-        return y.flatten()
+with h5py.File('link_models.hdf5', 'r') as hdf5_models:
+    links_model = multivariate_normal(hdf5_models['/link/mu'].value,
+                                      hdf5_models['/link/sig'].value)    
+    
+    links_model_lr = multivariate_normal(hdf5_models['/link_lr/mu'].value,
+                                         hdf5_models['/link_lr/sig'].value)
 
 class Outliner(object):
 
@@ -359,9 +335,9 @@ class Outliner(object):
                     for peak in currentPeaks:
                         E = X[peak, p] * np.ones(neighborPeaks.size)
                         dF = (f[peak] - f[neighborPeaks]) / (t[p] - t[p+1])
-                        LL = links_model_lr.eval(np.vstack((E, dF)))
-                        b = np.argmax(LL)
-                        if LL[b] > self.links_thresh:
+                        LL = links_model_lr.logpdf(np.stack((E, dF), axis=-1))
+                        a, b = np.max(LL), np.argmax(LL)
+                        if a > self.links_thresh:
                             nnRight[peak, p] = neighborPeaks[b]
 
                 # left link only
@@ -370,9 +346,9 @@ class Outliner(object):
                     for peak in currentPeaks:
                         E = X[peak, p] * np.ones(neighborPeaks.size)
                         dF = (f[peak] - f[neighborPeaks]) / (t[p] - t[p-1])
-                        LL = links_model_lr.eval(np.vstack((E, dF)))
-                        b = np.argmax(LL)
-                        if LL[b] > self.links_thresh:
+                        LL = links_model_lr.logpdf(np.stack((E, dF), axis=-1))
+                        a, b = np.max(LL), np.argmax(LL)
+                        if a > self.links_thresh:
                             nnLeft[peak, p] = neighborPeaks[b]
 
                 # left and right link
@@ -385,9 +361,9 @@ class Outliner(object):
                         dF = np.dot(C1, F1) * 1e-6 #kHz/ms
                         sF = np.maximum(40, 10*np.log10(np.sum(F1 * np.dot(B, F1), axis=0) / (2 * deltaSize + 1) + 1)) #dB, averaged
                         E  = X[peak, p] * np.ones(dF.size)
-                        LL = links_model.eval(np.vstack((E, dF, sF)))
-                        b = np.argmax(LL)
-                        if LL[b] > self.links_thresh:
+                        LL = links_model.logpdf(np.stack((E, dF, sF), axis=-1))
+                        a, b = np.max(LL), np.argmax(LL)
+                        if a > self.links_thresh:
                             nnLeft[peak, p] = leftPeaks[b % leftPeaks.size]
                             nnRight[peak, p] = rightPeaks[b // leftPeaks.size]
 
@@ -545,9 +521,6 @@ if __name__ == "__main__":
     except IOError:
         print("Cannot find file: %s" % sys.argv[1])
         exit()
-
-    links_model = GaussianModel('linksModel', '/Users/felix/Documents/batcloud/callviewer 2/callviewer/linksModel.mat')
-    links_model_lr = GaussianModel('linksModel', '/Users/felix/Documents/batcloud/callviewer 2/callviewer/linksModel.mat', LR=True)
 
     outliner = Outliner(HPFcutoff = 15)
     outline = outliner.extract_features(data, fs)
