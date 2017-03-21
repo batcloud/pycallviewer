@@ -245,7 +245,8 @@ class Outliner(object):
         F0 = link[:,0].T # Hz, ROW vector
         A0 = link[:,2].T # dB, ROW vector
 
-        dF0, sF0 = self.compute_derivative(F0, B, C1)
+        # dF0 = np.gradient(F0) * self.frame_rate
+        dF0, sF0 = self.compute_derivative(F0, B, C1) 
         dA0, sA0 = self.compute_derivative(A0, B, C1)
         ddF0, _  = self.compute_derivative(dF0, B, C1)
         ddA0, _  = self.compute_derivative(dA0, B, C1)
