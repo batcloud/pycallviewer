@@ -406,18 +406,18 @@ class Outliner(object):
 
     def filter_echo(self, links):
         num_links = len(links)
-        cost_terms = np.zeros((5, num_links))
+        cost_terms = np.empty((num_links, 5))
         for i, link in enumerate(links):
             sF = link.lfeat.sF
             # Adjust sF, truncate values at 40 so that sF 
             # appears more Gaussian in distribution:
             sF[sF < 40] = 40
 
-            cost_terms[0, i] = (len(link.lfeat) - 1) / self.frame_rate
-            cost_terms[1, i] = np.max(link.lfeat.E)
-            cost_terms[2, i] = np.median(sF)
-            cost_terms[3, i] = np.median(link.lfeat.echo_energy - sF)
-            cost_terms[4, i] = np.median(link.lfeat.dF)
+            cost_terms[i, 0] = (link.lfeat.F.size - 1) / self.frame_rate
+            cost_terms[i, 1] = np.max(link.lfeat.E)
+            cost_terms[i, 2] = np.median(sF)
+            cost_terms[i, 3] = np.median(link.lfeat.echo_energy - link.lfeat.E)
+            cost_terms[i, 4] = np.median(link.lfeat.dF)
          
         # Compute likelihoods:
         LLcall = call_model.logpdf(cost_terms)
