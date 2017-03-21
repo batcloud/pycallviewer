@@ -56,12 +56,18 @@ LocalFeatures = namedtuple('LocalFeatures',
                             ])
 
 
-with h5py.File('link_models.hdf5', 'r') as hdf5_models:
+with h5py.File('models.hdf5', 'r') as hdf5_models:
     links_model = multivariate_normal(hdf5_models['/link/mu'].value,
                                       hdf5_models['/link/sig'].value)    
     
     links_model_lr = multivariate_normal(hdf5_models['/link_lr/mu'].value,
                                          hdf5_models['/link_lr/sig'].value)
+
+    call_model = multivariate_normal(hdf5_models['/call/mu'].value,
+                                     hdf5_models['/call/sig'].value)
+
+    echo_model = multivariate_normal(hdf5_models['/echo/mu'].value,
+                                     hdf5_models['/echo/sig'].value)
 
 class Outliner(object):
 
@@ -414,11 +420,11 @@ class Outliner(object):
             cost_terms[4, i] = np.median(link.lfeat.dF)
          
         # Compute likelihoods:
-        # LLcall = echo_model.eval(cost_terms)
-        # LLecho = call_model.eval(cost_terms)
+        LLcall = call_model.logpdf(cost_terms)
+        LLecho = echo_model.logpdf(cost_terms)
         # == 1: link is a call (fundamental or harmonic);
         # == 0 : not a call (echo or harmonic)
-        # is_call = LLcall >= (LLecho + self.baseline_thresh)
+        is_call = LLcall >= (LLecho + self.baseline_thresh)
 
         endpoints = np.zeros((num_links, 2))
         for i, link in enumerate(links):
