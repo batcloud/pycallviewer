@@ -470,7 +470,8 @@ class Outliner(object):
 
                     if Fratio.size > 1:
                         # more robust to outliers due to untrimmed endpoints
-                        ratioMean[j] = np.median(Fratio)
+                        # TODO: include tolerance 0.1
+                        ratioMean[j] = round(np.median(Fratio), 1)
                         if ratioMean[j] > 1 :
                             fraction = Fraction.from_float(ratioMean[j])
                             ratioVar[j] = np.var(Fratio)
